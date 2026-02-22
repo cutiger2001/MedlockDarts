@@ -75,8 +75,10 @@ function Test-Admin {
 
 function Find-SqlCmd {
     # Check common paths for sqlcmd
+    $cmd = Get-Command sqlcmd -ErrorAction SilentlyContinue
+    $cmdPath = if ($cmd) { $cmd.Source } else { $null }
     $paths = @(
-        (Get-Command sqlcmd -ErrorAction SilentlyContinue)?.Source,
+        $cmdPath,
         "C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\170\Tools\Binn\sqlcmd.exe",
         "C:\Program Files\Microsoft SQL Server\Client SDK\ODBC\180\Tools\Binn\sqlcmd.exe",
         "C:\Program Files\Microsoft SQL Server\150\Tools\Binn\sqlcmd.exe",
