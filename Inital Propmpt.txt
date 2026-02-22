@@ -1,0 +1,54 @@
+We're going to create a dart scoring MOBILE and Web app.  The existing app we use is https://www.scoredarts.com/online/.  Our app needs to work on both iOS and Android tablets - however it's fine if this is just a web display that looks good on phones/tablets. 
+
+For the backend - I have a local MS-SQL server.
+
+What will make this app different from the existing is league play. And tracking statistics by both players and teams. 
+
+Check these for ideas on user interface.  Use a 
+https://apps.apple.com/gb/app/score-darts-scorer/id587868848
+https://play.google.com/store/apps/details?id=com.scoredarts.scoredarts
+
+In the setup the user can choose a Color Theme:
+DJ - https://onmessage.nd.edu/university-branding/colors/
+TD - https://www.clemson.edu/brand/color/
+Default - https://www.flagcolorcodes.com/usa with neutral grey background
+
+League Rules:
+https://danielgeojean.wixsite.com/medlock-bridge-dart/rules
+Scoring Rules:
+https://ndadarts.com/nda-rules/
+
+A player is an individual person.  Include a player setup to capture the persons name and an image captured on mobile device.
+
+Stats to track:
+
+Ideally we want to track the score for each turn the player takes in every game for later analysis.
+
+Points Per Dart (PPD) 
+Marks Per Round (MPR)
+All-Stars - reference League Rules
+
+INs - this is the player that records the double in score on a game marked "Double In".  The should track the count and average score of the IN
+OUTs - this is the player that records the closing score of an X01 game.  This should track the count and average score of the OUT
+CLOSE - this is the player that records the winning dart in a Cricket Game
+
+
+
+League play:
+Each team will be made up of two players selected from the list of players.  A league season will be a round robin where each team plays all other teams.  After the round robin, the top 4 teams will play in a playoff with the 1&4, 2&3 in the semi-finals, with winner of those two matches playing in the finals.  Check League rules for tiebreak scenarios.
+
+At the start of a match include a button for a coin toss - when the user presses the button a random result of Heads/Tails should be shown on the screen. 
+
+The team scoring is the combination/average to the two players and should also be tracked.
+
+For long term scoring and stats each team in each league season should have a unique identifier.
+
+
+Games To support:
+X01 - 301,501, user input X01 where x is an intger from 1 to 20
+Cricket - https://www.scoredarts.com/crickethelp/
+Shanghi - Same rules as cricket with 3 addtional tracking of Triples (T), Doubles(D) and Three in the Bed (3B).  For scoring on T/D/3B - if the other team has not closed the score segment, add the score entered to the team points.  Add a button for a "Shanghi" which adds 200 points to your score.
+
+Round the World - 1-20 & 20-1 will count scores for a single segment in order by number option selected.  Also include Random order, first generate a list of numbers 1-20+Bull then indicate which number a user must target.
+
+ 
