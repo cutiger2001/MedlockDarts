@@ -326,10 +326,80 @@ if (-not $sqlcmd) {
 if ($useSqlCmd) {
     $serverConn = "localhost\$SqlInstance"
 
-    # Create login and database using SA/Windows auth
+    # Determine which auth method works for admin access
+    Write-Host "      Testing SQL Server connectivity..." -ForegroundColor Gray
+    
+    $adminAuth = $null
+    # Try Windows Auth first (most likely to work on fresh Express install)
+    $testResult = & $sqlcmd -S $serverConn -E -Q "SELECT 1" 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        $adminAuth = "windows"
+        Write-OK "Connected via Windows Authentication"
+    } else {
+        # Try SA with the provided password
+        $testResult = & $sqlcmd -S $serverConn -U sa -P $DbPassword -Q "SELECT 1" 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $adminAuth = "sa"
+            Write-OK "Connected via SA Authentication"
+        }
+    }
+
+    if (-not $adminAuth) {
+        Write-Fail "Cannot connect to SQL Server at $serverConn"
+        Write-Host "      Tried Windows Auth and SA auth - both failed." -ForegroundColor Gray
+        Write-Host "" -ForegroundColor Gray
+        Write-Host "      Troubleshooting steps:" -ForegroundColor Yellow
+        Write-Host "        1. Open SQL Server Configuration Manager" -ForegroundColor Gray
+        Write-Host "        2. Ensure SQL Server ($SqlInstance) service is running" -ForegroundColor Gray
+        Write-Host "        3. Enable TCP/IP under SQL Server Network Configuration" -ForegroundColor Gray
+        Write-Host "        4. Ensure Mixed Mode authentication is enabled:" -ForegroundColor Gray
+        Write-Host "           - Open SSMS, right-click server > Properties > Security" -ForegroundColor Gray
+        Write-Host "           - Select 'SQL Server and Windows Authentication mode'" -ForegroundColor Gray
+        Write-Host "           - Restart the SQL Server service" -ForegroundColor Gray
+        Write-Host "" -ForegroundColor Gray
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+
+    # Build sqlcmd auth args based on what works
+    function Invoke-SqlCmd-Admin {
+        param([string]$Query, [string]$InputFile, [string]$Database)
+        $args = @("-S", $serverConn)
+        if ($adminAuth -eq "windows") {
+            $args += "-E"
+        } else {
+            $args += @("-U", "sa", "-P", $DbPassword)
+        }
+        if ($Database) { $args += @("-d", $Database) }
+        if ($InputFile) { $args += @("-i", $InputFile) }
+        if ($Query) { $args += @("-Q", $Query) }
+        return & $sqlcmd @args 2>&1
+    }
+
+    # Enable Mixed Mode auth if using Windows Auth
+    if ($adminAuth -eq "windows") {
+        Write-Host "      Enabling Mixed Mode authentication..." -ForegroundColor Gray
+        $enableMixed = @"
+EXEC xp_instance_regwrite N'HKEY_LOCAL_MACHINE', N'Software\Microsoft\MSSQLServer\MSSQLServer', N'LoginMode', REG_DWORD, 2;
+PRINT 'Mixed mode authentication enabled.';
+"@
+        $enableFile = Join-Path $TempDir "enable_mixed.sql"
+        $enableMixed | Out-File -FilePath $enableFile -Encoding UTF8
+        $mixedResult = Invoke-SqlCmd-Admin -InputFile $enableFile
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Mixed Mode auth enabled"
+            # Restart SQL to apply
+            Write-Host "      Restarting SQL Server to apply auth changes..." -ForegroundColor Gray
+            Restart-Service -Name "MSSQL`$$SqlInstance" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 5
+        } else {
+            Write-Warn "Could not enable mixed mode (may already be enabled)"
+        }
+    }
+
+    # Create login and database
     Write-Host "      Creating database and login..." -ForegroundColor Gray
 
-    # First try Windows Auth (works if current user is admin on SQL)
     $setupSql = @"
 -- Create database if it doesn't exist
 IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = '$DbName')
@@ -370,21 +440,33 @@ GO
     $setupFile = Join-Path $TempDir "setup_db.sql"
     $setupSql | Out-File -FilePath $setupFile -Encoding UTF8
 
-    # Try Windows Auth first, fall back to SA auth
-    $sqlResult = & $sqlcmd -S $serverConn -E -i $setupFile 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-Warn "Windows auth failed, trying SA auth..."
-        $sqlResult = & $sqlcmd -S $serverConn -U sa -P $DbPassword -i $setupFile 2>&1
-    }
-    
+    $sqlResult = Invoke-SqlCmd-Admin -InputFile $setupFile
     if ($LASTEXITCODE -eq 0) {
         Write-OK "Database '$DbName' and login '$DbUser' ready"
     } else {
-        Write-Warn "Database setup had issues: $sqlResult"
-        Write-Host "      Will attempt to continue..." -ForegroundColor DarkGray
+        Write-Fail "Database setup failed:"
+        Write-Host "      $sqlResult" -ForegroundColor Red
+        Read-Host "Press Enter to exit"
+        exit 1
     }
 
-    # Run schema migrations
+    # Verify DartsAdmin can connect
+    Write-Host "      Verifying '$DbUser' login works..." -ForegroundColor Gray
+    $verifyResult = & $sqlcmd -S $serverConn -U $DbUser -P $DbPassword -d $DbName -Q "SELECT 1" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Login '$DbUser' cannot connect to '$DbName'"
+        Write-Host "      $verifyResult" -ForegroundColor Red
+        Write-Host "" -ForegroundColor Gray
+        Write-Host "      This usually means Mixed Mode auth is not enabled." -ForegroundColor Yellow
+        Write-Host "      Open SSMS > right-click server > Properties > Security" -ForegroundColor Gray
+        Write-Host "      Select 'SQL Server and Windows Authentication mode'" -ForegroundColor Gray
+        Write-Host "      Then restart the SQL Server service and re-run this installer." -ForegroundColor Gray
+        Read-Host "Press Enter to exit"
+        exit 1
+    }
+    Write-OK "Login '$DbUser' verified"
+
+    # Run schema migrations using DartsAdmin
     Write-Host "      Running schema migrations..." -ForegroundColor Gray
     $schemaFiles = Get-ChildItem (Join-Path $AppDir "database") -Filter "*.sql" | 
                    Where-Object { $_.Name -ne "999_reset_and_simulate.sql" } |
