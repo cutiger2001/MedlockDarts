@@ -488,24 +488,48 @@ GO
 Write-Step 4 "NPM Dependencies & Production Build"
 
 Push-Location $AppDir
-try {
-    Write-Host "      Installing npm dependencies (this may take a minute)..." -ForegroundColor Gray
-    & npm run install:all 2>&1 | Out-Null
-    Write-OK "Dependencies installed"
 
-    Write-Host "      Building client (Vite production build)..." -ForegroundColor Gray
-    & npm run build:client 2>&1 | Out-Null
-    Write-OK "Client built to client/dist/"
+$buildLog = Join-Path $TempDir "build.log"
 
-    Write-Host "      Building server (TypeScript compilation)..." -ForegroundColor Gray
-    & npm run build:server 2>&1 | Out-Null
-    Write-OK "Server built to server/dist/"
-} catch {
-    Write-Fail "Build failed: $($_.Exception.Message)"
+Write-Host "      Installing npm dependencies (this may take a minute)..." -ForegroundColor Gray
+$installOutput = cmd /c "npm run install:all 2>&1"
+$installOutput | Out-File -FilePath $buildLog -Encoding UTF8
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "npm install failed (exit code $LASTEXITCODE)"
+    Write-Host "      Build log: $buildLog" -ForegroundColor Gray
+    $installOutput | Select-Object -Last 10 | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
     Pop-Location
     Read-Host "Press Enter to exit"
     exit 1
 }
+Write-OK "Dependencies installed"
+
+Write-Host "      Building client (Vite production build)..." -ForegroundColor Gray
+$clientOutput = cmd /c "npm run build:client 2>&1"
+$clientOutput | Out-File -FilePath $buildLog -Append -Encoding UTF8
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "Client build failed (exit code $LASTEXITCODE)"
+    Write-Host "      Build log: $buildLog" -ForegroundColor Gray
+    $clientOutput | Select-Object -Last 10 | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+    Pop-Location
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+Write-OK "Client built to client/dist/"
+
+Write-Host "      Building server (TypeScript compilation)..." -ForegroundColor Gray
+$serverOutput = cmd /c "npm run build:server 2>&1"
+$serverOutput | Out-File -FilePath $buildLog -Append -Encoding UTF8
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "Server build failed (exit code $LASTEXITCODE)"
+    Write-Host "      Build log: $buildLog" -ForegroundColor Gray
+    $serverOutput | Select-Object -Last 10 | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+    Pop-Location
+    Read-Host "Press Enter to exit"
+    exit 1
+}
+Write-OK "Server built to server/dist/"
+
 Pop-Location
 
 # ══════════════════════════════════════════════════════════════════════
