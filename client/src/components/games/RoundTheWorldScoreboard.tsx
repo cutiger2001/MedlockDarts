@@ -1,7 +1,10 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import type { Game, Match, GamePlayer, Turn } from '../../types';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
+import {
+  announceNowThrowing, announceRtwResult, announceCricketGameOut,
+} from '../../utils/announcer';
 
 interface ScoreboardProps {
   game: Game;
@@ -88,6 +91,9 @@ export function RoundTheWorldScoreboard({ game, match, players, turns, onAddTurn
 
     const actualScore = hit ? (score || target) : 0;
 
+    // Audio: announce hit/miss
+    announceRtwResult(hit, target);
+
     await onAddTurn({
       PlayerID: currentPlayer.PlayerID,
       TeamSeasonID: currentPlayer.TeamSeasonID,
@@ -102,6 +108,8 @@ export function RoundTheWorldScoreboard({ game, match, players, turns, onAddTurn
     if (hit) {
       const pp = playerProgress[currentPlayer.PlayerID];
       if (pp && pp.index + 1 >= sequence.length) {
+        const teamName = currentPlayer.TeamSeasonID === homeTeamId ? (match.HomeTeamName || 'Home') : (match.AwayTeamName || 'Away');
+        announceCricketGameOut(teamName);
         await onEndGame(currentPlayer.TeamSeasonID);
       }
     }
@@ -109,8 +117,27 @@ export function RoundTheWorldScoreboard({ game, match, players, turns, onAddTurn
 
   const disabled = game.Status === 'Completed';
 
+  /* --- Audio: announce "Now Throwing" on player change --- */
+  const prevRtwTurnCount = useRef(turns.length);
+  const hasAnnouncedFirstRtw = useRef(false);
+  useEffect(() => {
+    if (disabled || !currentPlayer) return;
+    const name = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+    if (!hasAnnouncedFirstRtw.current && turns.length === 0) {
+      const t = setTimeout(() => announceNowThrowing(name), 600);
+      hasAnnouncedFirstRtw.current = true;
+      return () => clearTimeout(t);
+    }
+    if (turns.length > prevRtwTurnCount.current) {
+      const t = setTimeout(() => announceNowThrowing(name), 2200);
+      prevRtwTurnCount.current = turns.length;
+      return () => clearTimeout(t);
+    }
+    prevRtwTurnCount.current = turns.length;
+  }, [turns.length, currentPlayer, disabled]);
+
   return (
-    <div>
+    <div style={{ width: '100%', margin: '0 auto' }}>
       {/* Header with mode indicator */}
       <Card style={{ marginBottom: 'var(--spacing-lg)', textAlign: 'center' }}>
         <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--color-primary)' }}>
@@ -208,18 +235,28 @@ export function RoundTheWorldScoreboard({ game, match, players, turns, onAddTurn
 
       {/* Current player and target */}
       {currentPlayer && !disabled && (
-        <Card style={{ marginBottom: 'var(--spacing-md)', textAlign: 'center' }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>Now Throwing</div>
-          <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--color-primary)', marginBottom: 'var(--spacing-sm)' }}>
-            {currentPlayer.FirstName} {currentPlayer.LastName}
+        <Card style={{
+          marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-sm) var(--spacing-md)',
+          border: `3px solid ${currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)'}`,
+          backgroundColor: currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
+              {currentPlayer.FirstName} {currentPlayer.LastName}
+            </span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
+              — Now Throwing
+            </span>
           </div>
           {getPlayerTarget(currentPlayer.PlayerID) !== null && (
-            <div style={{
-              display: 'inline-block', padding: '12px 24px',
-              backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
-              borderRadius: 'var(--radius-lg)', fontSize: '2rem', fontWeight: 700,
-            }}>
-              🎯 Target: {getPlayerTarget(currentPlayer.PlayerID) === 25 ? 'Bull' : getPlayerTarget(currentPlayer.PlayerID)}
+            <div style={{ textAlign: 'center', marginTop: 'var(--spacing-xs)' }}>
+              <span style={{
+                display: 'inline-block', padding: '8px 20px',
+                backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
+                borderRadius: 'var(--radius-lg)', fontSize: '1.8rem', fontWeight: 700,
+              }}>
+                🎯 Target: {getPlayerTarget(currentPlayer.PlayerID) === 25 ? 'Bull' : getPlayerTarget(currentPlayer.PlayerID)}
+              </span>
             </div>
           )}
         </Card>

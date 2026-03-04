@@ -714,7 +714,7 @@ export const gameService = {
     const result = await pool.request()
       .input('gameId', sql.Int, gameId)
       .query(`
-        SELECT gp.*, p.FirstName, p.LastName, p.Nickname, p.ImageData
+        SELECT gp.*, p.FirstName, p.LastName, p.Nickname, p.ImageData, p.ThemeColor
         FROM GamePlayers gp
         JOIN Players p ON gp.PlayerID = p.PlayerID
         WHERE gp.GameID = @gameId

@@ -55,6 +55,17 @@ router.delete('/:seasonId/teams/:teamId', asyncHandler(async (req, res) => {
   res.json({ success: true });
 }));
 
+// Update team-season settings (color, nickname)
+router.put('/:seasonId/teams/:teamSeasonId', asyncHandler(async (req, res) => {
+  const { TeamColor, TeamNickname } = req.body;
+  const updated = await seasonService.updateTeamSeason(
+    Number(req.params.teamSeasonId),
+    { TeamColor, TeamNickname }
+  );
+  if (!updated) throw new AppError(404, 'TeamSeason not found');
+  res.json(updated);
+}));
+
 // Schedule generation
 router.post('/:id/schedule', asyncHandler(async (req, res) => {
   const matchCount = await seasonService.generateSchedule(Number(req.params.id));

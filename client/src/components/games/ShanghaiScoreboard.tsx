@@ -1,9 +1,14 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { Game, Match, GamePlayer, Turn, CricketState } from '../../types';
 import { gameService } from '../../services/gameService';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import { PlayerAvatar } from '../common/PlayerAvatar';
+import {
+  announceNowThrowing, announceMarks,
+  announceShanghaiBonus as announceShanghaiAudio,
+  announceCricketGameOut,
+} from '../../utils/announcer';
 
 interface ScoreboardProps {
   game: Game;
@@ -24,6 +29,12 @@ const SEGMENT_KEYS: Record<string, keyof CricketState> = {
 };
 const EXTRA_SEGMENTS = new Set(['T', 'D', '3B']);
 const MAX_TAPS_PER_TURN = 9;
+const SEGMENT_MAX_TAPS: Record<string, number> = {
+  'T': 3,
+  'D': 3,
+  '3B': 1,
+  'Bull': 6,
+};
 
 function renderMarks(count: number): React.ReactNode {
   if (count === 0) return <span style={{ opacity: 0.3 }}>·</span>;
@@ -69,6 +80,27 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
   const currentPlayer = turnOrder[currentPlayerIndex];
   const currentRound = turnOrder.length > 0 ? Math.floor(turns.length / turnOrder.length) + 1 : 1;
 
+  const disabled = game.Status === 'Completed';
+
+  /* --- Audio: announce "Now Throwing" on player change --- */
+  const prevShanghaiTurnCount = useRef(turns.length);
+  const hasAnnouncedFirstShanghai = useRef(false);
+  useEffect(() => {
+    if (disabled || !currentPlayer) return;
+    const name = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+    if (!hasAnnouncedFirstShanghai.current && turns.length === 0) {
+      const t = setTimeout(() => announceNowThrowing(name), 600);
+      hasAnnouncedFirstShanghai.current = true;
+      return () => clearTimeout(t);
+    }
+    if (turns.length > prevShanghaiTurnCount.current) {
+      const t = setTimeout(() => announceNowThrowing(name), 2200);
+      prevShanghaiTurnCount.current = turns.length;
+      return () => clearTimeout(t);
+    }
+    prevShanghaiTurnCount.current = turns.length;
+  }, [turns.length, currentPlayer, disabled]);
+
   const getMarks = (state: CricketState | undefined, segment: string): number => {
     if (!state) return 0;
     const key = SEGMENT_KEYS[segment];
@@ -79,8 +111,10 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
     return Object.values(turnMarks).reduce((s, v) => s + v, 0);
   }, [turnMarks]);
 
-  const currentTeamColor = currentPlayer?.TeamSeasonID === homeTeamId
-    ? 'var(--color-primary)' : 'var(--color-secondary)';
+  const currentPlayerColor = currentPlayer?.ThemeColor || null;
+  const currentTeamColor = currentPlayerColor
+    || (currentPlayer?.TeamSeasonID === homeTeamId
+      ? 'var(--color-primary)' : 'var(--color-secondary)');
 
   /* --- Scoring preview --- */
   const turnPreview = useMemo(() => {
@@ -104,8 +138,10 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
 
       if (!opponentClosed && added > marksToClose) {
         if (EXTRA_SEGMENTS.has(seg)) {
-          // T/D/3B: use manually entered score
-          totalPoints += extraScores[seg] || 0;
+          // T/D/3B: only score points if segment was already closed before this turn
+          if (baseMarks >= 3) {
+            totalPoints += extraScores[seg] || 0;
+          }
         } else {
           const overflow = added - marksToClose;
           const segValue = seg === 'Bull' ? 25 : Number(seg);
@@ -127,8 +163,10 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
     const oppMarks = opponentState ? (opponentState[key] as number) : 0;
     const currentTaps = turnMarks[seg] || 0;
     if (oppMarks >= 3 && myMarks >= 3) return 0; // both closed
-    if (oppMarks >= 3) return Math.max(0, 3 - myMarks - currentTaps);
-    return MAX_TAPS_PER_TURN - totalTaps;
+    const segLimit = SEGMENT_MAX_TAPS[seg] || MAX_TAPS_PER_TURN;
+    if (currentTaps >= segLimit) return 0;
+    if (oppMarks >= 3) return Math.max(0, Math.min(3 - myMarks - currentTaps, segLimit - currentTaps));
+    return Math.min(MAX_TAPS_PER_TURN - totalTaps, segLimit - currentTaps);
   }, [currentPlayer, cricketState, turnMarks, totalTaps]);
 
   const isBothClosed = useCallback((seg: string): boolean => {
@@ -145,7 +183,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
     const newTaps = (turnMarks[seg] || 0) + 1;
     setTurnMarks(prev => ({ ...prev, [seg]: newTaps }));
 
-    // If T/D/3B and this creates overflow scoring, prompt for score
+    // If T/D/3B and team already closed this segment, prompt for score on additional marks
     if (EXTRA_SEGMENTS.has(seg) && currentPlayer) {
       const teamState = cricketState.find(s => s.TeamSeasonID === currentPlayer.TeamSeasonID);
       const opponentState = cricketState.find(s => s.TeamSeasonID !== currentPlayer.TeamSeasonID);
@@ -153,7 +191,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
       if (key) {
         const baseMarks = teamState ? (teamState[key] as number) : 0;
         const oppClosed = opponentState ? (opponentState[key] as number) >= 3 : false;
-        if (!oppClosed && baseMarks + newTaps > 3) {
+        if (!oppClosed && baseMarks >= 3) {
           setShowExtraPrompt(seg);
           setExtraInput(String(extraScores[seg] || ''));
         }
@@ -207,7 +245,9 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
       const oppClosed = opponentState ? (opponentState[key] as number) >= 3 : false;
       if (!oppClosed && added > marksToClose) {
         if (EXTRA_SEGMENTS.has(seg)) {
-          totalPoints += extraScores[seg] || 0;
+          if (baseMarks >= 3) {
+            totalPoints += extraScores[seg] || 0;
+          }
         } else {
           const overflow = added - marksToClose;
           const segValue = seg === 'Bull' ? 25 : Number(seg);
@@ -237,6 +277,9 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
     setTurnMarks({});
     setExtraScores({});
 
+    // Audio: announce marks
+    announceMarks(totalMarks);
+
     // Check win condition
     const updatedTeamState = { ...teamState } as any;
     for (const seg of SHANGHAI_SEGMENTS) {
@@ -251,6 +294,8 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
       return key && (updatedTeamState[key] as number) >= 3;
     });
     if (allClosed && updatedTeamState.Points >= (opponentState?.Points || 0)) {
+      const teamName = currentPlayer.TeamSeasonID === homeTeamId ? (match.HomeTeamName || 'Home') : (match.AwayTeamName || 'Away');
+      announceCricketGameOut(teamName);
       await onEndGame(currentPlayer.TeamSeasonID);
     }
   };
@@ -268,6 +313,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
     if (!currentPlayer) return;
     setShanghaiAnim(true);
     setTimeout(() => setShanghaiAnim(false), 2500);
+    announceShanghaiAudio();
     const teamState = cricketState.find(s => s.TeamSeasonID === currentPlayer.TeamSeasonID);
     const newPoints = (teamState?.Points || 0) + 200;
     await gameService.updateCricketState(game.GameID, currentPlayer.TeamSeasonID, { Points: newPoints });
@@ -282,10 +328,11 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
     });
   };
 
-  const disabled = game.Status === 'Completed';
+  const isHomeActive = !disabled && currentPlayer?.TeamSeasonID === homeTeamId;
+  const isAwayActive = !disabled && currentPlayer?.TeamSeasonID === awayTeamId;
 
   return (
-    <div>
+    <div style={{ width: '100%', margin: '0 auto' }}>
       {/* ===== Shanghai Bonus Animation Overlay ===== */}
       {shanghaiAnim && (
         <div style={{
@@ -294,25 +341,26 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
           backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 9999,
           animation: 'shanghaiOverlay 2.5s ease-in-out',
         }}>
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center', padding: '0 var(--spacing-md)', maxWidth: '100%' }}>
             <div style={{
-              fontSize: '4rem',
+              fontSize: 'clamp(2.5rem, 10vw, 4rem)',
               animation: 'shanghaiBounce 0.6s ease-in-out infinite alternate',
             }}>
               🀄
             </div>
             <div style={{
-              fontSize: '2.5rem', fontWeight: 900,
+              fontSize: 'clamp(1.5rem, 6vw, 2.5rem)', fontWeight: 900,
               color: '#FFD700',
               textShadow: '0 0 30px rgba(255,215,0,0.9), 0 0 60px rgba(255,100,0,0.5)',
               animation: 'shanghaiPulse 0.5s ease-in-out infinite alternate',
               marginTop: 'var(--spacing-sm)',
+              whiteSpace: 'nowrap',
             }}>
               SHANGHAI!
             </div>
             <div style={{
               fontSize: '1.5rem', fontWeight: 700, color: '#fff',
-              marginTop: 'var(--spacing-sm)',
+              marginTop: 'var(--spacing-sm)', whiteSpace: 'nowrap',
             }}>
               +200 Points
             </div>
@@ -325,7 +373,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)' }}>
-              <th style={{ padding: '10px', textAlign: 'center', width: '35%' }}>
+              <th style={{ padding: '10px', textAlign: 'center', width: '35%', boxShadow: isHomeActive ? 'inset 0 0 0 3px #FFD700' : 'none' }}>
                 {match.HomeTeamName}
                 <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
                   {(homeState?.Points || 0) + (currentPlayer?.TeamSeasonID === homeTeamId ? turnPreview.totalPoints : 0)}
@@ -335,7 +383,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
                 <div style={{ fontSize: '0.8rem' }}>Segment</div>
                 <div style={{ fontSize: '0.65rem', opacity: 0.7 }}>Tap to mark</div>
               </th>
-              <th style={{ padding: '10px', textAlign: 'center', width: '35%', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)' }}>
+              <th style={{ padding: '10px', textAlign: 'center', width: '35%', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)', boxShadow: isAwayActive ? 'inset 0 0 0 3px #FFD700' : 'none' }}>
                 {match.AwayTeamName}
                 <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
                   {(awayState?.Points || 0) + (currentPlayer?.TeamSeasonID === awayTeamId ? turnPreview.totalPoints : 0)}
@@ -374,6 +422,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
                       color: bothClosed ? 'var(--color-text-light)' : isExtra ? 'var(--color-secondary)' : 'var(--color-primary)',
                       cursor: canTap ? 'pointer' : 'default',
                       userSelect: 'none',
+                      WebkitUserSelect: 'none',
                     }}
                   >
                     <div>{seg === 'T' ? 'Triples' : seg === 'D' ? 'Doubles' : seg === '3B' ? '3-in-Bed' : seg}</div>
@@ -440,7 +489,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
           )}
           <Button
             onClick={completeTurn}
-            style={{ flex: 1, minHeight: 56, fontSize: '1.1rem', fontWeight: 700 }}
+            style={{ flex: 1, minHeight: 56, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
           >
             Complete Turn {totalTaps > 0 ? `(${turnPreview.totalMarks} marks)` : '(No Score)'}
           </Button>
@@ -450,20 +499,23 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
       {/* Now Throwing */}
       {currentPlayer && !disabled && (
         <Card style={{
-          marginBottom: 'var(--spacing-md)', textAlign: 'center',
-          borderLeft: `4px solid ${currentTeamColor}`,
+          marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-sm) var(--spacing-md)',
+          border: `3px solid ${currentTeamColor}`,
+          backgroundColor: currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)',
         }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>Now Throwing — Round {currentRound}</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', marginTop: 4 }}>
-            <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={40} />
-            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: currentTeamColor }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
+            <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={32} themeColor={currentPlayer.ThemeColor} />
+            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
               {currentPlayer.FirstName} {currentPlayer.LastName}
-            </div>
+            </span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
+              — Now Throwing — Rd {currentRound}
+            </span>
           </div>
-          <div style={{ marginTop: 'var(--spacing-xs)', fontSize: '1rem', fontWeight: 600 }}>
+          <div style={{ textAlign: 'center', marginTop: 4, fontSize: '0.9rem', fontWeight: 600, color: '#fff' }}>
             Marks: {totalTaps}/{MAX_TAPS_PER_TURN}
             {turnPreview.totalPoints > 0 && (
-              <span style={{ marginLeft: 'var(--spacing-md)', color: 'var(--color-success)' }}>
+              <span style={{ marginLeft: 'var(--spacing-md)', color: '#a5d6a7' }}>
                 +{turnPreview.totalPoints} pts
               </span>
             )}

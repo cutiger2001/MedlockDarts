@@ -1,9 +1,13 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import type { Game, Match, GamePlayer, CricketTurn, CricketState } from '../../types';
 import { gameService } from '../../services/gameService';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import { PlayerAvatar } from '../common/PlayerAvatar';
+import {
+  announceNowThrowing, announceMarks, announceAllStar,
+  announceCricketGameOut,
+} from '../../utils/announcer';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -31,6 +35,8 @@ const SEGMENT_KEYS: Record<string, keyof CricketState> = {
   '16': 'Seg16', '15': 'Seg15', 'Bull': 'SegBull',
 };
 const MAX_TAPS_PER_TURN = 9;
+const MAX_MARKS_PER_SEGMENT = 3;  // max marks on one segment per turn (one dart = up to triple)
+const MAX_SEGMENTS_PER_TURN = 3;  // only 3 darts, so at most 3 different segments
 
 /* ------------------------------------------------------------------ */
 /*  Mark Display Helper                                                */
@@ -107,6 +113,27 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
   const currentPlayer = turnOrder[currentPlayerIndex];
   const currentRound = turnOrder.length > 0 ? Math.floor(cricketTurns.length / turnOrder.length) + 1 : 1;
 
+  const disabled = game.Status === 'Completed';
+
+  /* --- Audio: announce "Now Throwing" on player change --- */
+  const prevCricketTurnCount = useRef(cricketTurns.length);
+  const hasAnnouncedFirstCricket = useRef(false);
+  useEffect(() => {
+    if (disabled || !currentPlayer) return;
+    const name = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+    if (!hasAnnouncedFirstCricket.current && cricketTurns.length === 0) {
+      const t = setTimeout(() => announceNowThrowing(name), 600);
+      hasAnnouncedFirstCricket.current = true;
+      return () => clearTimeout(t);
+    }
+    if (cricketTurns.length > prevCricketTurnCount.current) {
+      const t = setTimeout(() => announceNowThrowing(name), 2200);
+      prevCricketTurnCount.current = cricketTurns.length;
+      return () => clearTimeout(t);
+    }
+    prevCricketTurnCount.current = cricketTurns.length;
+  }, [cricketTurns.length, currentPlayer, disabled]);
+
   const getMarks = (state: CricketState | undefined, segment: string): number => {
     if (!state) return 0;
     const key = SEGMENT_KEYS[segment];
@@ -151,7 +178,12 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
     return { totalMarks, totalPoints, bullMarks };
   }, [turnMarks, currentPlayer, cricketState]);
 
-  /* --- Max taps allowed for a segment (limited when opponent closed) --- */
+  /* --- Number of distinct segments tapped this turn --- */
+  const segmentsUsed = useMemo(() => {
+    return Object.keys(turnMarks).filter(k => (turnMarks[k] || 0) > 0).length;
+  }, [turnMarks]);
+
+  /* --- Max taps allowed for a segment (limited by 3-dart rules) --- */
   const getMaxTapsForSeg = useCallback((seg: string): number => {
     if (!currentPlayer) return 0;
     const teamState = cricketState.find(s => s.TeamSeasonID === currentPlayer.TeamSeasonID);
@@ -161,11 +193,18 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
     const myMarks = teamState ? (teamState[key] as number) : 0;
     const oppMarks = opponentState ? (opponentState[key] as number) : 0;
     const currentTaps = turnMarks[seg] || 0;
+
+    // If this segment hasn't been tapped yet, check if we've hit the 3-segment limit
+    if (currentTaps === 0 && segmentsUsed >= MAX_SEGMENTS_PER_TURN) return 0;
+
+    // Per-segment cap: 3 marks max (one dart can score at most a triple)
+    if (currentTaps >= MAX_MARKS_PER_SEGMENT) return 0;
+
     if (oppMarks >= 3) {
-      return Math.max(0, 3 - myMarks - currentTaps);
+      return Math.max(0, Math.min(3 - myMarks - currentTaps, MAX_MARKS_PER_SEGMENT - currentTaps));
     }
-    return MAX_TAPS_PER_TURN - totalTaps;
-  }, [currentPlayer, cricketState, turnMarks, totalTaps]);
+    return Math.min(MAX_TAPS_PER_TURN - totalTaps, MAX_MARKS_PER_SEGMENT - currentTaps);
+  }, [currentPlayer, cricketState, turnMarks, totalTaps, segmentsUsed]);
 
   /* --- Tap a segment --- */
   const handleTap = useCallback((seg: string) => {
@@ -187,8 +226,9 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
   }, []);
 
   /* --- Team colors for current player --- */
-  const currentTeamColor = currentPlayer?.TeamSeasonID === homeTeamId
-    ? 'var(--color-primary)' : 'var(--color-secondary)';
+  const currentPlayerColor = currentPlayer?.ThemeColor || null;
+  const currentTeamColor = currentPlayerColor
+    || (currentPlayer?.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)');
 
   /* --- Is segment both-closed (disabled)? --- */
   const isBothClosed = useCallback((seg: string): boolean => {
@@ -248,6 +288,14 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
       setTimeout(() => setAllStarAnim(null), 2500);
     }
 
+    // Audio announcements
+    const playerFullName = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+    if (level) {
+      announceAllStar(level, playerFullName);
+    } else {
+      announceMarks(totalMarks);
+    }
+
     // Update cricket state on server
     const stateUpdate: Partial<CricketState> = {};
     for (const seg of CRICKET_SEGMENTS) {
@@ -299,6 +347,8 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
     const oppPoints = opponentState?.Points || 0;
 
     if (allClosed && teamPoints >= oppPoints) {
+      const teamName = currentPlayer.TeamSeasonID === homeTeamId ? (match.HomeTeamName || 'Home') : (match.AwayTeamName || 'Away');
+      announceCricketGameOut(teamName);
       await onEndGame(currentPlayer.TeamSeasonID);
     }
   };
@@ -328,10 +378,11 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
     return totalMarks / teamTurns.length;
   };
 
-  const disabled = game.Status === 'Completed';
+  const isHomeActive = !disabled && currentPlayer?.TeamSeasonID === homeTeamId;
+  const isAwayActive = !disabled && currentPlayer?.TeamSeasonID === awayTeamId;
 
   return (
-    <div>
+    <div style={{ width: '100%', margin: '0 auto' }}>
       {/* ===== All-Star Animation Overlay ===== */}
       {allStarAnim && (
         <div style={{
@@ -340,16 +391,17 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999,
           animation: 'fadeInOut 2.5s ease-in-out',
         }}>
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center', padding: '0 var(--spacing-md)', maxWidth: '100%' }}>
             <div style={{
-              fontSize: '2.5rem', fontWeight: 900,
+              fontSize: 'clamp(1.5rem, 6vw, 2.5rem)', fontWeight: 900,
               color: ALL_STAR_COLORS[allStarAnim.level!] || '#FFD700',
               textShadow: '0 0 20px rgba(255,215,0,0.8)',
               animation: 'pulse 0.5s ease-in-out infinite alternate',
+              whiteSpace: 'nowrap',
             }}>
               {ALL_STAR_LABELS[allStarAnim.level!]}
             </div>
-            <div style={{ color: '#fff', fontSize: '1.3rem', marginTop: 'var(--spacing-md)' }}>
+            <div style={{ color: '#fff', fontSize: '1.3rem', marginTop: 'var(--spacing-md)', whiteSpace: 'nowrap' }}>
               {allStarAnim.playerName}
             </div>
           </div>
@@ -361,7 +413,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)' }}>
-              <th style={{ padding: '10px', textAlign: 'center', width: '35%' }}>
+              <th style={{ padding: '10px', textAlign: 'center', width: '35%', boxShadow: isHomeActive ? 'inset 0 0 0 3px #FFD700' : 'none' }}>
                 {match.HomeTeamName}
                 <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
                   {(homeState?.Points || 0) + (currentPlayer?.TeamSeasonID === homeTeamId ? turnPreview.totalPoints : 0)}
@@ -374,7 +426,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                 <div style={{ fontSize: '0.8rem' }}>Segment</div>
                 <div style={{ fontSize: '0.65rem', opacity: 0.7 }}>Tap to mark</div>
               </th>
-              <th style={{ padding: '10px', textAlign: 'center', width: '35%', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)' }}>
+              <th style={{ padding: '10px', textAlign: 'center', width: '35%', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)', boxShadow: isAwayActive ? 'inset 0 0 0 3px #FFD700' : 'none' }}>
                 {match.AwayTeamName}
                 <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
                   {(awayState?.Points || 0) + (currentPlayer?.TeamSeasonID === awayTeamId ? turnPreview.totalPoints : 0)}
@@ -405,10 +457,10 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                   backgroundColor: bothClosed ? 'var(--color-surface-hover)' : undefined,
                 }}>
                   {/* Home marks */}
-                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '1.5rem' }}>
+                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '2rem' }}>
                     {renderMarks(isCurrentTeamHome ? liveHomeMarks : hm)}
                     {isCurrentTeamHome && tapCount > 0 && (
-                      <span style={{ fontSize: '0.7rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
                     )}
                   </td>
 
@@ -416,10 +468,11 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                   <td
                     onClick={() => canTap && handleTap(seg)}
                     style={{
-                      padding: '12px 10px', textAlign: 'center', fontWeight: 700, fontSize: '1.3rem',
+                      padding: '12px 10px', textAlign: 'center', fontWeight: 700, fontSize: '1.5rem',
                       color: bothClosed ? 'var(--color-text-light)' : 'var(--color-primary)',
                       cursor: canTap ? 'pointer' : 'default',
                       userSelect: 'none',
+                      WebkitUserSelect: 'none',
                     }}
                   >
                     <div>{seg}</div>
@@ -442,10 +495,10 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                   </td>
 
                   {/* Away marks */}
-                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '1.5rem' }}>
+                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '2rem' }}>
                     {renderMarks(!isCurrentTeamHome ? liveAwayMarks : am)}
                     {!isCurrentTeamHome && tapCount > 0 && (
-                      <span style={{ fontSize: '0.7rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
                     )}
                   </td>
                 </tr>
@@ -465,7 +518,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           )}
           <Button
             onClick={completeTurn}
-            style={{ flex: 1, minHeight: 56, fontSize: '1.1rem', fontWeight: 700 }}
+            style={{ flex: 1, minHeight: 56, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
           >
             Complete Turn {totalTaps > 0 ? `(${turnPreview.totalMarks} marks)` : '(No Score)'}
           </Button>
@@ -475,17 +528,23 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
       {/* ===== Now Throwing (below buttons) ===== */}
       {currentPlayer && !disabled && (
         <Card style={{
-          marginBottom: 'var(--spacing-md)', textAlign: 'center',
-          borderLeft: `4px solid ${currentTeamColor}`,
+          marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-sm) var(--spacing-md)',
+          border: `3px solid ${currentTeamColor}`,
+          backgroundColor: currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)',
         }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>Now Throwing — Round {currentRound}</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', marginTop: 4 }}>
-            <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={40} />
-            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: currentTeamColor }}>
-              {currentPlayer.FirstName} {currentPlayer.LastName} — {getPlayerMPR(currentPlayer.PlayerID).toFixed(1)}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
+            <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={32} themeColor={currentPlayer.ThemeColor} />
+            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
+              {currentPlayer.FirstName} {currentPlayer.LastName}
+            </span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
+              — MPR: {getPlayerMPR(currentPlayer.PlayerID).toFixed(2)}
+            </span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
+              — Now Throwing — Rd {currentRound}
+            </span>
           </div>
-          <div style={{ marginTop: 'var(--spacing-xs)', fontSize: '1rem', fontWeight: 600 }}>
+          <div style={{ textAlign: 'center', marginTop: 4, fontSize: '0.9rem', fontWeight: 600, color: '#fff' }}>
             Marks: {totalTaps}/{MAX_TAPS_PER_TURN}
             {turnPreview.totalPoints > 0 && (
               <span style={{ marginLeft: 'var(--spacing-md)', color: 'var(--color-success)' }}>

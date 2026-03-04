@@ -8,7 +8,7 @@ export interface AppSettings {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  x01ScoringMode: 'dart',
+  x01ScoringMode: 'turn',
   fastEntryScores: [26, 40, 41, 43, 60, 100],
 };
 

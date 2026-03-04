@@ -18,6 +18,11 @@ const GAME_TYPES: { value: GameType; label: string }[] = [
   { value: 'Shanghai', label: 'Shanghai' },
   { value: 'RoundTheWorld', label: 'Round the World' },
 ];
+const TEAM_COLORS = [
+  '#c62828', '#ad1457', '#6a1b9a', '#4527a0', '#283593',
+  '#1565c0', '#00838f', '#2e7d32', '#558b2f', '#f57f17',
+  '#e65100', '#4e342e', '#37474f', '#000000',
+];
 
 export function LeaguePage() {
   const { seasonId } = useParams();
@@ -37,6 +42,11 @@ export function LeaguePage() {
   const [error, setError] = useState('');
   const [gameFormats, setGameFormats] = useState<SeasonGameFormat[]>([]);
   const [formatsDirty, setFormatsDirty] = useState(false);
+  const [teamSetupModal, setTeamSetupModal] = useState(false);
+  const [editingTeamSeason, setEditingTeamSeason] = useState<TeamSeason | null>(null);
+  const [teamSetupForm, setTeamSetupForm] = useState({ TeamColor: '', TeamNickname: '' });
+  const [addPlayerModal, setAddPlayerModal] = useState(false);
+  const [newPlayerForm, setNewPlayerForm] = useState({ FirstName: '', LastName: '' });
 
   const loadSeasons = async () => {
     try {
@@ -181,6 +191,18 @@ export function LeaguePage() {
     } catch (err: any) { setError(err.message); }
   };
 
+  const saveTeamSetup = async () => {
+    if (!activeSeason || !editingTeamSeason) return;
+    try {
+      await seasonService.updateTeamSeason(activeSeason.SeasonID, editingTeamSeason.TeamSeasonID, {
+        TeamColor: teamSetupForm.TeamColor || undefined,
+        TeamNickname: teamSetupForm.TeamNickname || undefined,
+      });
+      setTeamSetupModal(false);
+      loadSeasonDetails(activeSeason.SeasonID);
+    } catch (err: any) { setError(err.message); }
+  };
+
   // Group matches by round
   const matchesByRound = matches.reduce<Record<number, Match[]>>((acc, m) => {
     (acc[m.RoundNumber] = acc[m.RoundNumber] || []).push(m);
@@ -304,6 +326,39 @@ export function LeaguePage() {
             </Card>
           )}
 
+          {/* Champion banner for completed season — above standings */}
+          {activeSeason.Status === 'Completed' && (() => {
+            // Use ChampionTeamSeasonID from DB first, fallback to finals match winner, then top of standings
+            let championTs: TeamSeason | undefined;
+            if (activeSeason.ChampionTeamSeasonID) {
+              championTs = teamSeasons.find(ts => ts.TeamSeasonID === activeSeason.ChampionTeamSeasonID);
+            }
+            if (!championTs) {
+              const finalsMatch = matches.find(m => m.IsPlayoff && m.PlayoffRound === 'Finals' && m.Status === 'Completed' && m.WinnerTeamSeasonID);
+              if (finalsMatch) {
+                championTs = teamSeasons.find(ts => ts.TeamSeasonID === finalsMatch.WinnerTeamSeasonID);
+              }
+            }
+            if (!championTs) return null;
+            return (
+              <Card style={{ marginBottom: 'var(--spacing-lg)', textAlign: 'center', border: '2px solid #FFD700', backgroundColor: 'var(--color-surface)' }}>
+                <div style={{ fontSize: '2rem', marginBottom: 'var(--spacing-xs)' }}>🏆</div>
+                <div style={{ fontSize: '0.85rem', color: 'var(--color-text-light)', marginBottom: 2 }}>Season Champion</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: 900, color: 'var(--color-primary)' }}>
+                  {championTs.TeamNickname || championTs.TeamName}
+                </div>
+                {championTs.TeamNickname && (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>{championTs.TeamName}</div>
+                )}
+                {!championTs.TeamNickname && (
+                  <div style={{ fontSize: '0.85rem', color: 'var(--color-text-light)' }}>
+                    {championTs.Player1FirstName} {championTs.Player1LastName} & {championTs.Player2FirstName} {championTs.Player2LastName}
+                  </div>
+                )}
+              </Card>
+            );
+          })()}
+
           {/* Standings */}
           <Card title="Standings" style={{ marginBottom: 'var(--spacing-lg)' }}>
             {teamSeasons.length === 0 ? (
@@ -323,9 +378,25 @@ export function LeaguePage() {
                       <tr key={ts.TeamSeasonID} style={{ borderBottom: '1px solid var(--color-border)' }}>
                         <td style={{ padding: '8px', fontWeight: 600 }}>{i + 1}</td>
                         <td style={{ padding: '8px' }}>
-                          <strong>{ts.TeamName}</strong>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
-                            {ts.Player1FirstName} {ts.Player1LastName} & {ts.Player2FirstName} {ts.Player2LastName}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)' }}>
+                            {ts.TeamColor && (
+                              <div style={{
+                                width: 14, height: 14, borderRadius: '50%',
+                                backgroundColor: ts.TeamColor, flexShrink: 0,
+                                border: '1px solid var(--color-border)',
+                              }} />
+                            )}
+                            <div>
+                              <strong>{ts.TeamNickname || ts.TeamName}</strong>
+                              {ts.TeamNickname && (
+                                <div style={{ fontSize: '0.75rem', color: 'var(--color-text-light)' }}>{ts.TeamName}</div>
+                              )}
+                              {!ts.TeamNickname && (
+                                <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
+                                  {ts.Player1FirstName} {ts.Player1LastName} & {ts.Player2FirstName} {ts.Player2LastName}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td style={{ padding: '8px', textAlign: 'center', fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-primary)' }}>{ts.GameWins}</td>
@@ -335,12 +406,25 @@ export function LeaguePage() {
                 </table>
               </div>
             )}
+            {teamSeasons.length > 0 && (
+              <div style={{ marginTop: 'var(--spacing-md)', textAlign: 'center' }}>
+                <Button size="sm" variant="ghost" onClick={() => setTeamSetupModal(true)}>⚙️ Manage Teams</Button>
+              </div>
+            )}
           </Card>
+
+
 
           {/* Schedule */}
           {Object.keys(matchesByRound).length > 0 && (
             <Card title="Schedule">
-              {Object.entries(matchesByRound).map(([round, roundMatches]) => (
+              {Object.entries(matchesByRound).sort(([aKey, aMatches], [bKey, bMatches]) => {
+                const aPlayoff = (aMatches as Match[])[0]?.IsPlayoff ? 1 : 0;
+                const bPlayoff = (bMatches as Match[])[0]?.IsPlayoff ? 1 : 0;
+                if (aPlayoff !== bPlayoff) return bPlayoff - aPlayoff; // playoffs first
+                if (aPlayoff) return Number(bKey) - Number(aKey); // playoffs: descending
+                return Number(aKey) - Number(bKey); // regular: ascending 1-7
+              }).map(([round, roundMatches]) => (
                 <div key={round} style={{ marginBottom: 'var(--spacing-lg)' }}>
                   <h4 style={{ color: 'var(--color-text-light)', fontSize: '0.85rem', marginBottom: 'var(--spacing-sm)' }}>
                     {roundMatches[0]?.IsPlayoff ? `Playoff — ${roundMatches[0]?.PlayoffRound}` : `Round ${round}`}
@@ -402,19 +486,123 @@ export function LeaguePage() {
         <p style={{ fontSize: '0.85rem', color: 'var(--color-text-light)', marginBottom: 'var(--spacing-md)' }}>
           Select two players to form a team.
         </p>
-        <Select
-          label="Player 1"
-          options={allPlayers.filter(p => String(p.PlayerID) !== teamPlayer2).map(p => ({ value: p.PlayerID, label: `${p.FirstName} ${p.LastName}` }))}
-          value={teamPlayer1}
-          onChange={e => setTeamPlayer1(e.target.value)}
+        {(() => {
+          // Collect player IDs already assigned to teams in this season
+          const usedPlayerIds = new Set<number>();
+          for (const ts of teamSeasons) {
+            const team = allTeams.find(t => t.TeamID === ts.TeamID);
+            if (team) {
+              usedPlayerIds.add(team.Player1ID);
+              if (team.Player2ID) usedPlayerIds.add(team.Player2ID);
+            }
+          }
+          const availablePlayers = allPlayers.filter(p => !usedPlayerIds.has(p.PlayerID));
+          return (
+            <>
+              <Select
+                label="Player 1"
+                options={availablePlayers
+                  .filter(p => String(p.PlayerID) !== teamPlayer2)
+                  .map(p => ({ value: p.PlayerID, label: `${p.FirstName} ${p.LastName}` }))}
+                value={teamPlayer1}
+                onChange={e => setTeamPlayer1(e.target.value)}
+              />
+              <div style={{ marginTop: 'var(--spacing-sm)' }}>
+                <Select
+                  label="Player 2"
+                  options={availablePlayers
+                    .filter(p => String(p.PlayerID) !== teamPlayer1)
+                    .map(p => ({ value: p.PlayerID, label: `${p.FirstName} ${p.LastName}` }))}
+                  value={teamPlayer2}
+                  onChange={e => setTeamPlayer2(e.target.value)}
+                />
+              </div>
+            </>
+          );
+        })()}
+        <div style={{ marginTop: 'var(--spacing-md)', borderTop: '1px solid var(--color-border)', paddingTop: 'var(--spacing-md)' }}>
+          <Button variant="ghost" size="sm" onClick={() => setAddPlayerModal(true)}>+ Add New Player</Button>
+        </div>
+      </Modal>
+
+      {/* Quick Add Player Modal (from Create Team) */}
+      <Modal isOpen={addPlayerModal} onClose={() => setAddPlayerModal(false)} title="Add Player"
+        footer={<><Button variant="ghost" onClick={() => setAddPlayerModal(false)}>Cancel</Button><Button onClick={async () => {
+          if (!newPlayerForm.FirstName) { setError('First name is required'); return; }
+          try {
+            await playerService.create({ FirstName: newPlayerForm.FirstName, LastName: newPlayerForm.LastName });
+            const p = await playerService.getAll();
+            setAllPlayers(p.filter((pl: Player) => pl.IsActive));
+            setNewPlayerForm({ FirstName: '', LastName: '' });
+            setAddPlayerModal(false);
+          } catch (err: any) { setError(err.message); }
+        }}>Save</Button></>}>
+        <Input label="First Name *" value={newPlayerForm.FirstName} onChange={e => setNewPlayerForm(f => ({ ...f, FirstName: e.target.value }))} placeholder="First name" />
+        <Input label="Last Name" value={newPlayerForm.LastName} onChange={e => setNewPlayerForm(f => ({ ...f, LastName: e.target.value }))} placeholder="Optional" />
+      </Modal>
+
+      {/* Team Setup Modal — list all teams, pick one to edit */}
+      <Modal isOpen={teamSetupModal && !editingTeamSeason} onClose={() => setTeamSetupModal(false)}
+        title="Manage Teams">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+          {teamSeasons.map(ts => (
+            <div key={ts.TeamSeasonID}
+              onClick={() => { setEditingTeamSeason(ts); setTeamSetupForm({ TeamColor: ts.TeamColor || '', TeamNickname: ts.TeamNickname || '' }); }}
+              style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                padding: 'var(--spacing-sm) var(--spacing-md)',
+                border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer', minHeight: 'var(--tap-target)',
+              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)' }}>
+                {ts.TeamColor && <div style={{ width: 14, height: 14, borderRadius: '50%', backgroundColor: ts.TeamColor, border: '1px solid var(--color-border)' }} />}
+                <span style={{ fontWeight: 600 }}>{ts.TeamNickname || ts.TeamName}</span>
+              </div>
+              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-light)' }}>⚙️</span>
+            </div>
+          ))}
+        </div>
+      </Modal>
+
+      {/* Team Setup Edit Modal — color picker + nickname */}
+      <Modal isOpen={!!editingTeamSeason} onClose={() => setEditingTeamSeason(null)}
+        title={`Setup: ${editingTeamSeason?.TeamNickname || editingTeamSeason?.TeamName || 'Team'}`}
+        footer={<><Button variant="ghost" onClick={() => setEditingTeamSeason(null)}>Cancel</Button><Button onClick={async () => { await saveTeamSetup(); setEditingTeamSeason(null); }}>Save</Button></>}>
+        <Input
+          label="Team Nickname"
+          value={teamSetupForm.TeamNickname}
+          onChange={e => setTeamSetupForm(f => ({ ...f, TeamNickname: e.target.value }))}
+          placeholder="e.g. The Sharks"
         />
-        <div style={{ marginTop: 'var(--spacing-sm)' }}>
-          <Select
-            label="Player 2"
-            options={allPlayers.filter(p => String(p.PlayerID) !== teamPlayer1).map(p => ({ value: p.PlayerID, label: `${p.FirstName} ${p.LastName}` }))}
-            value={teamPlayer2}
-            onChange={e => setTeamPlayer2(e.target.value)}
-          />
+        <div style={{ marginTop: 'var(--spacing-md)' }}>
+          <label style={{ display: 'block', fontWeight: 600, fontSize: '0.9rem', marginBottom: 'var(--spacing-xs)' }}>
+            Team Color
+          </label>
+          <div style={{ display: 'flex', gap: 'var(--spacing-xs)', flexWrap: 'wrap' }}>
+            {TEAM_COLORS.map(c => (
+              <button
+                key={c}
+                onClick={() => setTeamSetupForm(f => ({ ...f, TeamColor: c }))}
+                style={{
+                  width: 36, height: 36, borderRadius: '50%',
+                  backgroundColor: c, border: teamSetupForm.TeamColor === c ? '3px solid #FFD700' : '2px solid var(--color-border)',
+                  cursor: 'pointer', outline: 'none',
+                }}
+              />
+            ))}
+          </div>
+          {teamSetupForm.TeamColor && (
+            <div style={{ marginTop: 'var(--spacing-sm)', display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
+              <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: teamSetupForm.TeamColor, border: '1px solid var(--color-border)' }} />
+              <span style={{ fontSize: '0.85rem', color: 'var(--color-text-light)' }}>{teamSetupForm.TeamColor}</span>
+              <button
+                onClick={() => setTeamSetupForm(f => ({ ...f, TeamColor: '' }))}
+                style={{ fontSize: '0.8rem', color: 'var(--color-danger)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Clear
+              </button>
+            </div>
+          )}
         </div>
       </Modal>
     </div>

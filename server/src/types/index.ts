@@ -6,6 +6,7 @@ export interface Player {
   LastName: string;
   Nickname: string | null;
   ImageData: string | null;
+  ThemeColor: string | null;
   IsActive: boolean;
   CreatedAt: string;
   UpdatedAt: string;
@@ -16,6 +17,7 @@ export interface CreatePlayerInput {
   LastName: string;
   Nickname?: string;
   ImageData?: string;
+  ThemeColor?: string;
 }
 
 export interface Season {
@@ -25,6 +27,8 @@ export interface Season {
   EndDate: string | null;
   IsActive: boolean;
   Status: 'Setup' | 'RoundRobin' | 'Playoffs' | 'Completed';
+  ChampionTeamSeasonID: number | null;
+  ChampionTeamName: string | null;
   CreatedAt: string;
   UpdatedAt: string;
 }
@@ -56,6 +60,8 @@ export interface TeamSeason {
   PointsAgainst: number;
   PlayoffSeed: number | null;
   IsEliminated: boolean;
+  TeamColor?: string | null;
+  TeamNickname?: string | null;
   // Joined
   TeamName?: string;
   Player1FirstName?: string;
@@ -181,11 +187,14 @@ export interface PlayerStats {
   MPR: number;         // Marks Per Round (Cricket)
   InCount: number;
   InAvg: number;
+  HighestIn: number;
   OutCount: number;
   OutAvg: number;
+  HighestOut: number;
   CloseCount: number;
   AllStarCount: number;
   CricketDarts: number;
+  ShanghaiDarts: number;
   X01Darts: number;
 }
 

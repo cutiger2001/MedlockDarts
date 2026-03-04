@@ -169,7 +169,7 @@ CREATE TABLE Turns (
     IsGameOut       BIT             NOT NULL DEFAULT 0,     -- closing turn of X01
 
     -- Cricket / Shanghai fields
-    MarksScored     INT             NULL,                   -- total marks this turn
+    MarksScored     DECIMAL(6,2)    NULL,                   -- total marks this turn
     IsCricketClose  BIT             NOT NULL DEFAULT 0,     -- winning dart in Cricket
 
     -- Shanghai extra fields

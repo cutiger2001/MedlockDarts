@@ -2,10 +2,12 @@ import React, { useState } from 'react';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { useSettings } from '../contexts/SettingsContext';
+import { isAudioEnabled, setAudioEnabled } from '../utils/announcer';
 
 export function SettingsPage() {
   const { settings, updateSettings } = useSettings();
   const [newScore, setNewScore] = useState('');
+  const [audioOn, setAudioOn] = useState(isAudioEnabled);
 
   const addFastScore = () => {
     const val = Number(newScore);
@@ -31,9 +33,13 @@ export function SettingsPage() {
           <Button
             variant={settings.x01ScoringMode === 'dart' ? 'primary' : 'ghost'}
             onClick={() => updateSettings({ x01ScoringMode: 'dart' })}
-            style={{ flex: '1 1 150px', minHeight: 60 }}
+            style={{
+              flex: '1 1 150px', minHeight: 60,
+              border: settings.x01ScoringMode === 'dart' ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
+              boxShadow: settings.x01ScoringMode === 'dart' ? '0 0 0 2px var(--color-primary-light)' : 'none',
+            }}
           >
-            <div style={{ fontWeight: 700, fontSize: '1rem' }}>Individual Dart</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem' }}>{settings.x01ScoringMode === 'dart' ? '✓ ' : ''}Individual Dart</div>
             <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: 2 }}>
               Select each dart segment
             </div>
@@ -41,9 +47,13 @@ export function SettingsPage() {
           <Button
             variant={settings.x01ScoringMode === 'turn' ? 'primary' : 'ghost'}
             onClick={() => updateSettings({ x01ScoringMode: 'turn' })}
-            style={{ flex: '1 1 150px', minHeight: 60 }}
+            style={{
+              flex: '1 1 150px', minHeight: 60,
+              border: settings.x01ScoringMode === 'turn' ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
+              boxShadow: settings.x01ScoringMode === 'turn' ? '0 0 0 2px var(--color-primary-light)' : 'none',
+            }}
           >
-            <div style={{ fontWeight: 700, fontSize: '1rem' }}>Turn Total</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem' }}>{settings.x01ScoringMode === 'turn' ? '✓ ' : ''}Turn Total</div>
             <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: 2 }}>
               Enter round score via number pad
             </div>
@@ -89,6 +99,43 @@ export function SettingsPage() {
             onKeyDown={e => e.key === 'Enter' && addFastScore()}
           />
           <Button size="sm" onClick={addFastScore}>Add</Button>
+        </div>
+      </Card>
+
+      {/* Audio Announcer */}
+      <Card title="Audio Announcer" style={{ marginBottom: 'var(--spacing-lg)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-light)', marginBottom: 'var(--spacing-md)' }}>
+          Voice commentary announces player turns, scores, and game results.
+        </p>
+        <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>
+          <Button
+            variant={audioOn ? 'primary' : 'ghost'}
+            onClick={() => { setAudioEnabled(true); setAudioOn(true); }}
+            style={{
+              flex: '1 1 150px', minHeight: 60,
+              border: audioOn ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
+              boxShadow: audioOn ? '0 0 0 2px var(--color-primary-light)' : 'none',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: '1rem' }}>{audioOn ? '✓ ' : ''}🔊 On</div>
+            <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: 2 }}>
+              Voice announcements enabled
+            </div>
+          </Button>
+          <Button
+            variant={!audioOn ? 'primary' : 'ghost'}
+            onClick={() => { setAudioEnabled(false); setAudioOn(false); }}
+            style={{
+              flex: '1 1 150px', minHeight: 60,
+              border: !audioOn ? '3px solid var(--color-primary)' : '2px solid var(--color-border)',
+              boxShadow: !audioOn ? '0 0 0 2px var(--color-primary-light)' : 'none',
+            }}
+          >
+            <div style={{ fontWeight: 700, fontSize: '1rem' }}>{!audioOn ? '✓ ' : ''}🔇 Off</div>
+            <div style={{ fontSize: '0.75rem', opacity: 0.8, marginTop: 2 }}>
+              Silent mode
+            </div>
+          </Button>
         </div>
       </Card>
     </div>

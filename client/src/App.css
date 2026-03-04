@@ -51,12 +51,14 @@
 
 body {
   min-height: 100vh;
+  min-height: -webkit-fill-available;
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
 }
 
 #root {
   min-height: 100vh;
+  min-height: -webkit-fill-available;
   display: flex;
   flex-direction: column;
 }

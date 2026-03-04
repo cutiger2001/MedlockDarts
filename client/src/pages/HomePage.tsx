@@ -17,7 +17,7 @@ export function HomePage() {
       <h1 className="page-title">🎯 Darts League</h1>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))',
+        gridTemplateColumns: 'repeat(2, 1fr)',
         gap: 'var(--spacing-lg)',
       }}>
         {actions.map(a => (

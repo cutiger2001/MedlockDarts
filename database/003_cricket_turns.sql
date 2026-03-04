@@ -39,7 +39,7 @@ CREATE TABLE CricketTurns (
 
     -- Scoring summary
     Points          INT             NOT NULL DEFAULT 0,     -- points scored this turn (overflow)
-    MarksScored     INT             NOT NULL DEFAULT 0,     -- total marks this turn
+    MarksScored     DECIMAL(6,2)    NOT NULL DEFAULT 0,     -- total marks this turn
     IsCricketClose  BIT             NOT NULL DEFAULT 0,     -- winning turn in Cricket
     IsShanghaiBonus BIT             NOT NULL DEFAULT 0,     -- +200 Shanghai button used
 

@@ -1,20 +1,27 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { matchService } from '../services/matchService';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 
-const REFRESH_INTERVAL = 15_000; // 15 seconds
+const REFRESH_INTERVAL = 10_000; // 10 seconds
 
 export function LiveMatchPage() {
   const navigate = useNavigate();
   const [matches, setMatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const prevDataRef = useRef<string>('');
 
   const load = useCallback(async () => {
     try {
       const data = await matchService.getLive();
+      // Auto-refresh faster if data changed
+      const dataStr = JSON.stringify(data);
+      if (prevDataRef.current && prevDataRef.current !== dataStr) {
+        // Data changed — scores updated
+      }
+      prevDataRef.current = dataStr;
       setMatches(data);
       setLastRefresh(new Date());
     } catch {
@@ -100,56 +107,69 @@ export function LiveMatchPage() {
                 {m.IsPlayoff ? ` • ${m.PlayoffRound}` : ''}
               </div>
 
-              {/* Team names + score */}
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spacing-lg)', marginBottom: 'var(--spacing-md)' }}>
+              {/* Team names + match score (smaller) */}
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-xs)' }}>
                 <div style={{ flex: 1, textAlign: 'right' }}>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--color-primary)' }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-primary)' }}>
                     {m.HomeTeamName}
                   </div>
                 </div>
                 <div style={{
-                  padding: 'var(--spacing-xs) var(--spacing-md)',
-                  backgroundColor: 'var(--color-warning)',
-                  color: '#fff',
-                  borderRadius: 'var(--radius-md)',
-                  fontWeight: 700,
-                  fontSize: '1.4rem',
-                  minWidth: 70,
+                  padding: '2px var(--spacing-sm)',
+                  backgroundColor: 'var(--color-surface-hover)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontWeight: 600,
+                  fontSize: '0.9rem',
+                  color: 'var(--color-text-light)',
+                  minWidth: 50,
                   textAlign: 'center',
                 }}>
                   {score.home} – {score.away}
                 </div>
                 <div style={{ flex: 1, textAlign: 'left' }}>
-                  <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--color-secondary)' }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-secondary)' }}>
                     {m.AwayTeamName}
                   </div>
                 </div>
               </div>
 
-              {/* Active game banner */}
+              {/* Active game banner — bigger live scores */}
               {activeGame && (
                 <div style={{
-                  textAlign: 'center', padding: 'var(--spacing-sm)',
+                  textAlign: 'center', padding: 'var(--spacing-md)',
                   backgroundColor: 'var(--color-surface-hover)',
                   borderRadius: 'var(--radius-sm)',
                   marginBottom: 'var(--spacing-sm)',
+                  border: '1px solid var(--color-border)',
                 }}>
-                  <div style={{ fontSize: '0.85rem', marginBottom: 'var(--spacing-xs)' }}>
-                    <span style={{ fontWeight: 700 }}>Now Playing:</span> Game {activeGame.GameNumber} — {gameTypeLabel(activeGame)}
+                  <div style={{ fontSize: '0.8rem', marginBottom: 'var(--spacing-sm)', color: 'var(--color-text-light)' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--color-text)' }}>Now Playing:</span> Game {activeGame.GameNumber} — {gameTypeLabel(activeGame)}
                   </div>
                   {/* Live score within the active game */}
                   {activeGame.liveScore && activeGame.liveScore.type === 'X01' && (
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spacing-md)', fontSize: '1.1rem', fontWeight: 700 }}>
-                      <span style={{ color: 'var(--color-primary)' }}>{activeGame.liveScore.homeRemaining}</span>
-                      <span style={{ color: 'var(--color-text-light)', fontSize: '0.8rem' }}>remaining</span>
-                      <span style={{ color: 'var(--color-secondary)' }}>{activeGame.liveScore.awayRemaining}</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spacing-lg)' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '2.2rem', fontWeight: 900, color: 'var(--color-primary)' }}>{activeGame.liveScore.homeRemaining}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>remaining</div>
+                      </div>
+                      <div style={{ fontSize: '1.2rem', color: 'var(--color-text-light)', fontWeight: 300 }}>vs</div>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '2.2rem', fontWeight: 900, color: 'var(--color-secondary)' }}>{activeGame.liveScore.awayRemaining}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>remaining</div>
+                      </div>
                     </div>
                   )}
                   {activeGame.liveScore && (activeGame.liveScore.type === 'Cricket' || activeGame.liveScore.type === 'Shanghai') && (
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spacing-md)', fontSize: '1.1rem', fontWeight: 700 }}>
-                      <span style={{ color: 'var(--color-primary)' }}>{activeGame.liveScore.homePoints}</span>
-                      <span style={{ color: 'var(--color-text-light)', fontSize: '0.8rem' }}>pts</span>
-                      <span style={{ color: 'var(--color-secondary)' }}>{activeGame.liveScore.awayPoints}</span>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--spacing-lg)' }}>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '2.2rem', fontWeight: 900, color: 'var(--color-primary)' }}>{activeGame.liveScore.homePoints}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>points</div>
+                      </div>
+                      <div style={{ fontSize: '1.2rem', color: 'var(--color-text-light)', fontWeight: 300 }}>vs</div>
+                      <div style={{ textAlign: 'center' }}>
+                        <div style={{ fontSize: '2.2rem', fontWeight: 900, color: 'var(--color-secondary)' }}>{activeGame.liveScore.awayPoints}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--color-text-light)' }}>points</div>
+                      </div>
                     </div>
                   )}
                 </div>

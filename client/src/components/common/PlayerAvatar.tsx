@@ -4,13 +4,18 @@ interface PlayerAvatarProps {
   imageData: string | null | undefined;
   name: string;
   size?: number;
+  themeColor?: string | null;
 }
 
 /**
- * Displays a player's image (circle) if available, otherwise shows initials.
+ * Displays a player's image (circle) if available, otherwise shows initials
+ * with the player's chosen theme color (or a default).
  */
-export function PlayerAvatar({ imageData, name, size = 48 }: PlayerAvatarProps) {
-  const initials = name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+export function PlayerAvatar({ imageData, name, size = 48, themeColor }: PlayerAvatarProps) {
+  const initials = name.split(' ').map(w => w[0]).filter(Boolean).join('').toUpperCase().slice(0, 2);
+  const bgColor = themeColor || 'var(--color-surface-hover)';
+  // Determine text color based on background brightness
+  const textColor = themeColor ? '#fff' : 'var(--color-text-light)';
 
   if (imageData) {
     const src = imageData.startsWith('data:') ? imageData : `data:image/jpeg;base64,${imageData}`;
@@ -29,10 +34,10 @@ export function PlayerAvatar({ imageData, name, size = 48 }: PlayerAvatarProps) 
   return (
     <div style={{
       width: size, height: size, borderRadius: '50%',
-      backgroundColor: 'var(--color-surface-hover)',
+      backgroundColor: bgColor,
       border: '2px solid var(--color-border)',
       display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontWeight: 700, fontSize: size * 0.35, color: 'var(--color-text-light)',
+      fontWeight: 700, fontSize: size * 0.35, color: textColor,
     }}>
       {initials}
     </div>

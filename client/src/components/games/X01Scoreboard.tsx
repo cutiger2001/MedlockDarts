@@ -1,10 +1,14 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { Game, Match, GamePlayer, Turn } from '../../types';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
 import { PlayerAvatar } from '../common/PlayerAvatar';
 import { useSettings } from '../../contexts/SettingsContext';
 import { getCheckout } from '../../data/checkoutChart';
+import {
+  announceNowThrowing, announceRequires, announceX01Score, announceAllStar,
+  announceBust, announceGameOut,
+} from '../../utils/announcer';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -113,8 +117,9 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   /* --- Team grouping --- */
   const homeTeamId = match.HomeTeamSeasonID;
   const awayTeamId = match.AwayTeamSeasonID;
+  const isSoloPlay = homeTeamId === awayTeamId;
   const homePlayers = players.filter(p => p.TeamSeasonID === homeTeamId);
-  const awayPlayers = players.filter(p => p.TeamSeasonID === awayTeamId);
+  const awayPlayers = isSoloPlay ? [] : players.filter(p => p.TeamSeasonID === awayTeamId);
 
   /* --- Turn order (alternating home/away, or custom if pre-ordered) --- */
   const turnOrder = useMemo(() => {
@@ -178,6 +183,21 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   /* --- Average (PPD * 3) per player --- */
   const getPlayerAverage = (playerId: number) => getPlayerPPD(playerId) * 3;
 
+  /* --- Team average (combined PPD * 3 for all players on a team) --- */
+  const getTeamAverage = (teamPlayers: GamePlayer[]) => {
+    let totalDarts = 0;
+    let totalScore = 0;
+    for (const p of teamPlayers) {
+      const s = playerStats[p.PlayerID];
+      if (s) { totalDarts += s.dartsThrown; totalScore += s.totalScore; }
+    }
+    return totalDarts > 0 ? (totalScore / totalDarts) * 3 : 0;
+  };
+
+  /* --- Short team label: combined first names (e.g. "John & Mike") --- */
+  const getShortTeamLabel = (teamPlayers: GamePlayer[]) =>
+    teamPlayers.map(p => p.FirstName).join(' & ');
+
   const currentTeamScore = currentPlayer ? teamScores[currentPlayer.TeamSeasonID] : null;
   const turnScoreSoFar = currentDarts.reduce((s, d) => s + d.score, 0);
   const liveRemaining = currentTeamScore ? currentTeamScore.remaining - getEffectiveTurnScore(currentDarts, doubleInRequired, currentTeamScore.hasDoubledIn) : target;
@@ -199,12 +219,23 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
     const isDoubleIn = doubleInRequired && !currentTeamScore?.hasDoubledIn && hasDoubleInThisTurn && !isBust;
 
     // All-Star check
-    if (!isBust && effectiveScore > 0) {
-      const level = getX01AllStarLevel(effectiveScore, isDoubleIn, isGameOut);
-      if (level) {
-        setAllStarAnim({ level, playerName: `${currentPlayer.FirstName} ${currentPlayer.LastName}` });
-        setTimeout(() => setAllStarAnim(null), 2500);
-      }
+    const allStarLevel = (!isBust && effectiveScore > 0)
+      ? getX01AllStarLevel(effectiveScore, isDoubleIn, isGameOut) : null;
+    if (allStarLevel) {
+      setAllStarAnim({ level: allStarLevel, playerName: `${currentPlayer.FirstName} ${currentPlayer.LastName}` });
+      setTimeout(() => setAllStarAnim(null), 2500);
+    }
+
+    // Audio announcements
+    const playerFullName = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+    if (isBust) {
+      announceBust();
+    } else if (allStarLevel) {
+      announceAllStar(allStarLevel, playerFullName);
+    } else if (isGameOut) {
+      announceGameOut(playerFullName);
+    } else {
+      announceX01Score(effectiveScore);
     }
 
     await onAddTurn({
@@ -217,7 +248,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       RemainingScore: remaining,
       IsDoubleIn: isDoubleIn,
       IsGameOut: isGameOut,
-      Details: JSON.stringify({ darts, bust: isBust, allStarLevel: getX01AllStarLevel(effectiveScore, isDoubleIn, isGameOut) }),
+      Details: JSON.stringify({ darts, bust: isBust, allStarLevel }),
     });
 
     setCurrentDarts([]);
@@ -264,12 +295,20 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
     const isDoubleIn = doubleInRequired && !currentTeamScore?.hasDoubledIn && score > 0;
 
     // All-Star check
-    if (score > 0) {
-      const level = getX01AllStarLevel(score, isDoubleIn, isGameOut);
-      if (level) {
-        setAllStarAnim({ level, playerName: `${currentPlayer.FirstName} ${currentPlayer.LastName}` });
-        setTimeout(() => setAllStarAnim(null), 2500);
-      }
+    const allStarLevel = score > 0 ? getX01AllStarLevel(score, isDoubleIn, isGameOut) : null;
+    if (allStarLevel) {
+      setAllStarAnim({ level: allStarLevel, playerName: `${currentPlayer.FirstName} ${currentPlayer.LastName}` });
+      setTimeout(() => setAllStarAnim(null), 2500);
+    }
+
+    // Audio announcements
+    const playerFullName = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+    if (allStarLevel) {
+      announceAllStar(allStarLevel, playerFullName);
+    } else if (isGameOut) {
+      announceGameOut(playerFullName);
+    } else {
+      announceX01Score(score);
     }
 
     await onAddTurn({
@@ -282,7 +321,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       RemainingScore: remaining,
       IsDoubleIn: isDoubleIn,
       IsGameOut: isGameOut,
-      Details: JSON.stringify({ allStarLevel: getX01AllStarLevel(score, isDoubleIn, isGameOut) }),
+      Details: JSON.stringify({ allStarLevel }),
     });
 
     setTurnInput('');
@@ -459,11 +498,37 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
 
   const disabled = game.Status === 'Completed';
 
+  /* --- Audio: announce "Now Throwing" on player change --- */
+  const prevTurnCount = useRef(turns.length);
+  const hasAnnouncedFirst = useRef(false);
+  useEffect(() => {
+    if (disabled || !currentPlayer) return;
+    const name = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+    const remaining = teamScores[currentPlayer.TeamSeasonID]?.remaining ?? target;
+    const isCheckout = remaining <= 170 && remaining > 0;
+    const announce = () => isCheckout ? announceRequires(name, remaining) : announceNowThrowing(name);
+    if (!hasAnnouncedFirst.current && turns.length === 0) {
+      // Announce first player on game start (slight delay for page load)
+      const t = setTimeout(announce, 600);
+      hasAnnouncedFirst.current = true;
+      return () => clearTimeout(t);
+    }
+    if (turns.length > prevTurnCount.current) {
+      // A turn was just submitted — announce next player after score readout
+      const t = setTimeout(announce, 2200);
+      prevTurnCount.current = turns.length;
+      return () => clearTimeout(t);
+    }
+    prevTurnCount.current = turns.length;
+  }, [turns.length, currentPlayer, disabled, teamScores]);
+
   /* --- Team color for current player --- */
-  const currentTeamColor = currentPlayer?.TeamSeasonID === homeTeamId
-    ? 'var(--color-primary)' : 'var(--color-secondary)';
-  const currentTeamTextColor = currentPlayer?.TeamSeasonID === homeTeamId
-    ? 'var(--color-text-on-primary)' : 'var(--color-text-on-secondary)';
+  const currentPlayerColor = currentPlayer?.ThemeColor || null;
+  const currentTeamColor = currentPlayerColor
+    || (currentPlayer?.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)');
+  const currentTeamTextColor = currentPlayerColor
+    ? '#fff'
+    : (currentPlayer?.TeamSeasonID === homeTeamId ? 'var(--color-text-on-primary)' : 'var(--color-text-on-secondary)');
 
   /* --- Available multipliers for selected segment --- */
   const availableMultipliers = useMemo(() => {
@@ -477,7 +542,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   }, [selectedSegment]);
 
   return (
-    <div>
+    <div style={{ width: '100%', margin: '0 auto' }}>
       {/* ===== All-Star Animation Overlay ===== */}
       {allStarAnim && (
         <div style={{
@@ -486,16 +551,17 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
           backgroundColor: 'rgba(0,0,0,0.7)', zIndex: 9999,
           animation: 'fadeInOut 2.5s ease-in-out',
         }}>
-          <div style={{ textAlign: 'center' }}>
+          <div style={{ textAlign: 'center', padding: '0 var(--spacing-md)', maxWidth: '100%' }}>
             <div style={{
-              fontSize: '2.5rem', fontWeight: 900,
+              fontSize: 'clamp(1.5rem, 6vw, 2.5rem)', fontWeight: 900,
               color: ALL_STAR_COLORS[allStarAnim.level!] || '#FFD700',
               textShadow: '0 0 20px rgba(255,215,0,0.8)',
               animation: 'pulse 0.5s ease-in-out infinite alternate',
+              whiteSpace: 'nowrap',
             }}>
               {ALL_STAR_LABELS[allStarAnim.level!]}
             </div>
-            <div style={{ color: '#fff', fontSize: '1.3rem', marginTop: 'var(--spacing-md)' }}>
+            <div style={{ color: '#fff', fontSize: '1.3rem', marginTop: 'var(--spacing-md)', whiteSpace: 'nowrap' }}>
               {allStarAnim.playerName}
             </div>
           </div>
@@ -503,36 +569,51 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       )}
 
       {/* ===== Score Header ===== */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: '1fr auto 1fr',
-        gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-lg)',
-        alignItems: 'center',
-      }}>
+      {isSoloPlay ? (
+        /* Solo play: single centered score box */
+        <div style={{ marginBottom: 'var(--spacing-lg)', textAlign: 'center' }}>
+          <Card style={{
+            textAlign: 'center', backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
+            padding: 'var(--spacing-md)', maxWidth: 300, margin: '0 auto',
+          }}>
+            <div style={{ fontSize: '2.5rem', fontWeight: 700, margin: 'var(--spacing-xs) 0' }}>
+              {teamScores[homeTeamId]?.remaining ?? target}
+            </div>
+            {homePlayers.map(p => (
+              <div key={p.PlayerID} style={{ padding: '2px 0' }}>
+                <span style={{ fontSize: '0.9rem', fontWeight: 700 }}>{p.FirstName} {p.LastName}</span>
+                <div style={{ fontSize: '0.7rem', opacity: 0.7 }}>
+                  Avg: {getPlayerAverage(p.PlayerID).toFixed(1)} | PPD: {getPlayerPPD(p.PlayerID).toFixed(2)}
+                  {' | '}{playerStats[p.PlayerID]?.dartsThrown || 0}d
+                </div>
+              </div>
+            ))}
+          </Card>
+          <div style={{ marginTop: 'var(--spacing-xs)' }}>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--color-primary)' }}>{target}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>Round {currentRound}</div>
+          </div>
+        </div>
+      ) : (
+        /* Team/1v1 play: two score boxes */
+        <div style={{
+          display: 'grid', gridTemplateColumns: '1fr auto 1fr',
+          gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-lg)',
+          alignItems: 'center',
+        }}>
         {/* Home team */}
         <Card style={{
-          textAlign: 'center', backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)', padding: 'var(--spacing-md)',
+          textAlign: 'center', backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)', padding: 'var(--spacing-sm) var(--spacing-md)',
           outline: !disabled && currentPlayer?.TeamSeasonID === homeTeamId ? '3px solid #FFD700' : 'none',
           outlineOffset: 2,
         }}>
-          <div style={{ fontSize: '0.85rem', opacity: 0.8 }}>{match.HomeTeamName}</div>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, margin: 'var(--spacing-xs) 0' }}>
+          <div style={{ fontSize: '0.8rem', opacity: 0.8, whiteSpace: 'nowrap' }}>{getShortTeamLabel(homePlayers)}</div>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1.1, margin: '2px 0' }}>
             {teamScores[homeTeamId]?.remaining ?? target}
           </div>
-          {homePlayers.map(p => (
-            <div key={p.PlayerID} style={{
-              padding: '2px 0',
-              fontWeight: currentPlayer?.PlayerID === p.PlayerID ? 700 : 400,
-              opacity: currentPlayer?.PlayerID === p.PlayerID ? 1 : 0.7,
-            }}>
-              <span style={{ fontSize: '0.8rem' }}>{p.FirstName} {p.LastName}</span>
-              <span style={{ fontSize: '0.65rem', opacity: 0.7, marginLeft: 4 }}>
-                ({playerStats[p.PlayerID]?.dartsThrown || 0}d)
-              </span>
-              <div style={{ fontSize: '0.65rem', opacity: 0.7 }}>
-                Avg: {getPlayerAverage(p.PlayerID).toFixed(1)} | PPD: {getPlayerPPD(p.PlayerID).toFixed(2)}
-              </div>
-            </div>
-          ))}
+          <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+            Avg: {getTeamAverage(homePlayers).toFixed(1)}
+          </div>
         </Card>
 
         {/* Center info */}
@@ -559,82 +640,76 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
 
         {/* Away team */}
         <Card style={{
-          textAlign: 'center', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)', padding: 'var(--spacing-md)',
+          textAlign: 'center', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)', padding: 'var(--spacing-sm) var(--spacing-md)',
           outline: !disabled && currentPlayer?.TeamSeasonID === awayTeamId ? '3px solid #FFD700' : 'none',
           outlineOffset: 2,
         }}>
-          <div style={{ fontSize: '0.85rem', opacity: 0.8 }}>{match.AwayTeamName}</div>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, margin: 'var(--spacing-xs) 0' }}>
+          <div style={{ fontSize: '0.8rem', opacity: 0.8, whiteSpace: 'nowrap' }}>{getShortTeamLabel(awayPlayers)}</div>
+          <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1.1, margin: '2px 0' }}>
             {teamScores[awayTeamId]?.remaining ?? target}
           </div>
-          {awayPlayers.map(p => (
-            <div key={p.PlayerID} style={{
-              padding: '2px 0',
-              fontWeight: currentPlayer?.PlayerID === p.PlayerID ? 700 : 400,
-              opacity: currentPlayer?.PlayerID === p.PlayerID ? 1 : 0.7,
-            }}>
-              <span style={{ fontSize: '0.8rem' }}>{p.FirstName} {p.LastName}</span>
-              <span style={{ fontSize: '0.65rem', opacity: 0.7, marginLeft: 4 }}>
-                ({playerStats[p.PlayerID]?.dartsThrown || 0}d)
-              </span>
-              <div style={{ fontSize: '0.65rem', opacity: 0.7 }}>
-                Avg: {getPlayerAverage(p.PlayerID).toFixed(1)} | PPD: {getPlayerPPD(p.PlayerID).toFixed(2)}
-              </div>
-            </div>
-          ))}
+          <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>
+            Avg: {getTeamAverage(awayPlayers).toFixed(1)}
+          </div>
         </Card>
       </div>
+      )}
 
-      {/* ===== Double-Out Chart ===== */}
+      {/* ===== Now Throwing + Checkout (directly under scores, both modes) ===== */}
       {currentPlayer && !disabled && (() => {
         const remaining = teamScores[currentPlayer.TeamSeasonID]?.remaining ?? target;
         const checkout = remaining <= 170 ? getCheckout(remaining) : null;
-        if (!checkout) return null;
+        const bgColor = currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)';
         return (
           <Card style={{
-            marginBottom: 'var(--spacing-md)', textAlign: 'center',
-            border: '2px solid var(--color-success)',
-            backgroundColor: 'var(--color-surface)',
+            marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-sm) var(--spacing-md)',
+            border: `3px solid ${currentTeamColor}`, backgroundColor: bgColor,
           }}>
-            <div style={{ fontSize: '0.75rem', color: 'var(--color-text-light)', marginBottom: 4 }}>
-              Checkout ({remaining})
+            {/* Now Throwing row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
+              <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={32} themeColor={currentPlayer.ThemeColor} />
+              <span style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
+                {currentPlayer.FirstName} {currentPlayer.LastName}
+              </span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
+                — Avg: {getPlayerAverage(currentPlayer.PlayerID).toFixed(1)}
+              </span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
+                — Now Throwing
+              </span>
+              {doubleInRequired && !hasDoubledIn && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', fontWeight: 700 }}>
+                  (Needs Double In)
+                </span>
+              )}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--spacing-sm)' }}>
-              {checkout.map((dart, i) => (
-                <div key={i} style={{
-                  padding: '6px 14px',
-                  borderRadius: 'var(--radius-sm)',
-                  backgroundColor: dart.startsWith('D') ? 'var(--color-success)' :
-                    dart.startsWith('T') ? 'var(--color-danger)' : 'var(--color-surface-hover)',
-                  color: (dart.startsWith('D') || dart.startsWith('T')) ? '#fff' : 'var(--color-text)',
-                  fontWeight: 700,
-                  fontSize: '1.1rem',
-                }}>
-                  {dart}
+            {/* Checkout darts (merged into Now Throwing bar) */}
+            {checkout && (
+              <div style={{ marginTop: 'var(--spacing-xs)', textAlign: 'center' }}>
+                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>
+                  Checkout ({remaining})
                 </div>
-              ))}
-            </div>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--spacing-xs)' }}>
+                  {checkout.map((dart, i) => (
+                    <div key={i} style={{
+                      padding: '4px 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      backgroundColor: dart.startsWith('D') ? 'rgba(255,255,255,0.25)' :
+                        dart.startsWith('T') ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontWeight: 700,
+                      fontSize: '1rem',
+                      border: dart.startsWith('D') ? '1px solid rgba(255,255,255,0.5)' : '1px solid rgba(255,255,255,0.2)',
+                    }}>
+                      {dart}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
         );
       })()}
-
-      {/* ===== Now Throwing (dart mode only — turn mode shows below numpad) ===== */}
-      {currentPlayer && !disabled && scoringMode === 'dart' && (
-        <Card style={{ marginBottom: 'var(--spacing-md)', textAlign: 'center', borderLeft: `4px solid ${currentTeamColor}` }}>
-          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>Now Throwing</div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', marginTop: 4 }}>
-            <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={40} />
-            <div style={{ fontSize: '1.2rem', fontWeight: 700, color: currentTeamColor }}>
-              {currentPlayer.FirstName} {currentPlayer.LastName}
-            </div>
-          </div>
-          {doubleInRequired && !hasDoubledIn && (
-            <div style={{ fontSize: '0.75rem', color: 'var(--color-warning)', fontWeight: 600, marginTop: 2 }}>
-              Needs Double In
-            </div>
-          )}
-        </Card>
-      )}
 
       {/* ===== Current Turn Darts (dart mode only) ===== */}
       {!disabled && scoringMode === 'dart' && (
@@ -826,7 +901,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
               <div style={{
                 fontSize: '2.5rem', fontWeight: 700, minHeight: 60,
                 padding: 'var(--spacing-sm)',
-                border: `2px solid ${currentTeamColor}`,
+                border: `3px solid ${currentTeamColor}`,
                 borderRadius: 'var(--radius-md)',
                 backgroundColor: 'var(--color-surface)',
               }}>
@@ -862,7 +937,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
               display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
               gap: 'var(--spacing-xs)', maxWidth: 300, margin: '0 auto',
             }}>
-              {[7, 8, 9, 4, 5, 6, 1, 2, 3].map(n => (
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
                 <Button
                   key={n}
                   size="lg"
@@ -902,70 +977,57 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
             {/* Submit button */}
             <Button
               onClick={() => submitTurnScore(Number(turnInput) || 0)}
-              style={{ width: '100%', marginTop: 'var(--spacing-md)', minHeight: 56, fontSize: '1.1rem', fontWeight: 700 }}
+              style={{ width: '100%', marginTop: 'var(--spacing-md)', minHeight: 56, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
             >
               Submit Turn ({turnInput || '0'})
             </Button>
           </Card>
 
-          {/* ===== Now Throwing (below numpad in turn mode) ===== */}
-          {currentPlayer && (
-            <Card style={{
-              marginBottom: 'var(--spacing-md)', textAlign: 'center',
-              borderLeft: `4px solid ${currentTeamColor}`,
-            }}>
-              <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>Now Throwing</div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', marginTop: 4 }}>
-                <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={40} />
-                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: currentTeamColor }}>
-                  {currentPlayer.FirstName} {currentPlayer.LastName}
-                </div>
-              </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-light)', marginTop: 2 }}>
-                Avg: {getPlayerAverage(currentPlayer.PlayerID).toFixed(1)} | PPD: {getPlayerPPD(currentPlayer.PlayerID).toFixed(2)}
-              </div>
-              {doubleInRequired && !currentTeamScore?.hasDoubledIn && (
-                <div style={{ fontSize: '0.75rem', color: 'var(--color-warning)', fontWeight: 600, marginTop: 2 }}>
-                  Needs Double In
-                </div>
-              )}
-            </Card>
-          )}
-
-          {/* ===== Darts Prompt (on game-out) ===== */}
+          {/* ===== Darts Prompt (on game-out) — overlay ===== */}
           {dartsPromptScore !== null && (
-            <Card style={{
-              marginBottom: 'var(--spacing-md)', textAlign: 'center',
-              border: '2px solid var(--color-success)',
-              backgroundColor: 'var(--color-surface)',
+            <div style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.75)', zIndex: 9998,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 'var(--spacing-md)',
             }}>
-              <div style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: 'var(--spacing-sm)', color: 'var(--color-success)' }}>
-                🎯 Game Out! Score: {dartsPromptScore}
+              <div style={{
+                maxWidth: 360, width: '100%',
+                backgroundColor: 'var(--color-surface)',
+                borderRadius: 'var(--radius-lg)',
+                border: '3px solid var(--color-success)',
+                padding: 'var(--spacing-lg)',
+                textAlign: 'center',
+                boxShadow: 'var(--shadow-lg)',
+              }}>
+                <div style={{ fontSize: '1.3rem', fontWeight: 700, marginBottom: 'var(--spacing-sm)', color: 'var(--color-success)' }}>
+                  🎯 Game Out! Score: {dartsPromptScore}
+                </div>
+                <div style={{ fontSize: '1rem', color: 'var(--color-text-light)', marginBottom: 'var(--spacing-lg)' }}>
+                  How many darts were thrown?
+                </div>
+                <div style={{ display: 'flex', gap: 'var(--spacing-md)', justifyContent: 'center' }}>
+                  {[1, 2, 3].map(d => (
+                    <Button
+                      key={d}
+                      size="lg"
+                      variant="primary"
+                      onClick={() => confirmDartsAndSubmit(d)}
+                      style={{ minWidth: 80, minHeight: 64, fontSize: '1.5rem', fontWeight: 700 }}
+                    >
+                      {d}
+                    </Button>
+                  ))}
+                </div>
+                <Button
+                  variant="ghost"
+                  onClick={() => { setDartsPromptScore(null); setTurnInput(''); }}
+                  style={{ marginTop: 'var(--spacing-md)' }}
+                >
+                  Cancel
+                </Button>
               </div>
-              <div style={{ fontSize: '0.9rem', color: 'var(--color-text-light)', marginBottom: 'var(--spacing-md)' }}>
-                How many darts were thrown?
-              </div>
-              <div style={{ display: 'flex', gap: 'var(--spacing-sm)', justifyContent: 'center' }}>
-                {[1, 2, 3].map(d => (
-                  <Button
-                    key={d}
-                    size="lg"
-                    variant="primary"
-                    onClick={() => confirmDartsAndSubmit(d)}
-                    style={{ minWidth: 80, minHeight: 56, fontSize: '1.3rem', fontWeight: 700 }}
-                  >
-                    {d}
-                  </Button>
-                ))}
-              </div>
-              <Button
-                variant="ghost"
-                onClick={() => { setDartsPromptScore(null); setTurnInput(''); }}
-                style={{ marginTop: 'var(--spacing-sm)' }}
-              >
-                Cancel
-              </Button>
-            </Card>
+            </div>
           )}
         </>
       )}

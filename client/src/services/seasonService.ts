@@ -13,6 +13,8 @@ export const seasonService = {
     api.post<TeamSeason>(`/seasons/${seasonId}/teams`, { TeamID: teamId }),
   removeTeamFromSeason: (seasonId: number, teamId: number) =>
     api.delete(`/seasons/${seasonId}/teams/${teamId}`),
+  updateTeamSeason: (seasonId: number, teamSeasonId: number, data: { TeamColor?: string; TeamNickname?: string }) =>
+    api.put<TeamSeason>(`/seasons/${seasonId}/teams/${teamSeasonId}`, data),
   generateSchedule: (seasonId: number) =>
     api.post<{ matchesCreated: number }>(`/seasons/${seasonId}/schedule`, {}),
   generatePlayoffs: (seasonId: number) =>

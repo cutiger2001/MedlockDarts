@@ -12,7 +12,12 @@ export const seasonService = {
   async getAll(): Promise<Season[]> {
     const pool = await getPool();
     const result = await pool.request().query(
-      'SELECT * FROM Seasons ORDER BY CreatedAt DESC'
+      `SELECT s.*, t.TeamName AS ChampionTeamName
+       FROM Seasons s
+       LEFT JOIN TeamSeasons ts ON ts.TeamSeasonID = s.ChampionTeamSeasonID
+       LEFT JOIN Teams t ON t.TeamID = ts.TeamID
+       WHERE s.SeasonName <> 'Ad-Hoc Play'
+       ORDER BY s.SeasonID DESC`
     );
     return result.recordset;
   },
@@ -21,7 +26,11 @@ export const seasonService = {
     const pool = await getPool();
     const result = await pool.request()
       .input('id', sql.Int, id)
-      .query('SELECT * FROM Seasons WHERE SeasonID = @id');
+      .query(`SELECT s.*, t.TeamName AS ChampionTeamName
+              FROM Seasons s
+              LEFT JOIN TeamSeasons ts ON ts.TeamSeasonID = s.ChampionTeamSeasonID
+              LEFT JOIN Teams t ON t.TeamID = ts.TeamID
+              WHERE s.SeasonID = @id`);
     return result.recordset[0] || null;
   },
 
@@ -232,6 +241,45 @@ export const seasonService = {
     await pool.request()
       .input('seasonId', sql.Int, seasonId)
       .query("UPDATE Seasons SET Status = 'Playoffs', UpdatedAt = SYSUTCDATETIME() WHERE SeasonID = @seasonId");
+  },
+
+  /* =============================== */
+  /*  Team-Season Setup               */
+  /* =============================== */
+
+  async updateTeamSeason(teamSeasonId: number, input: { TeamColor?: string; TeamNickname?: string }): Promise<TeamSeason | null> {
+    const pool = await getPool();
+    const sets: string[] = [];
+    const request = pool.request().input('id', sql.Int, teamSeasonId);
+
+    if (input.TeamColor !== undefined) {
+      sets.push('TeamColor = @TeamColor');
+      request.input('TeamColor', sql.NVarChar(7), input.TeamColor || null);
+    }
+    if (input.TeamNickname !== undefined) {
+      sets.push('TeamNickname = @TeamNickname');
+      request.input('TeamNickname', sql.NVarChar(100), input.TeamNickname || null);
+    }
+
+    if (sets.length === 0) return null;
+
+    await request.query(`UPDATE TeamSeasons SET ${sets.join(', ')} WHERE TeamSeasonID = @id`);
+
+    // Return updated record with joins
+    const result = await pool.request()
+      .input('id', sql.Int, teamSeasonId)
+      .query(`
+        SELECT ts.*,
+          t.TeamName,
+          p1.FirstName AS Player1FirstName, p1.LastName AS Player1LastName,
+          p2.FirstName AS Player2FirstName, p2.LastName AS Player2LastName
+        FROM TeamSeasons ts
+        JOIN Teams t ON ts.TeamID = t.TeamID
+        JOIN Players p1 ON t.Player1ID = p1.PlayerID
+        JOIN Players p2 ON t.Player2ID = p2.PlayerID
+        WHERE ts.TeamSeasonID = @id
+      `);
+    return result.recordset[0] || null;
   },
 
   /* =============================== */
