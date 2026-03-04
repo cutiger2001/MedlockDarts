@@ -15,5 +15,9 @@
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "mssql": "^12.2.0",
+    "xlsx": "^0.18.5"
   }
 }
