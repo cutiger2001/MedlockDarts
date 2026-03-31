@@ -18,6 +18,7 @@ interface ScoreboardProps {
   onAddTurn: (turn: Partial<Turn>) => Promise<void>;
   onUndoTurn: () => Promise<void>;
   onEndGame: (winnerTeamSeasonId: number) => Promise<void>;
+  onMovePlayer: (playerId: number, direction: -1 | 1) => void | Promise<void>;
 }
 
 // Shanghai = Cricket + Triples, Doubles, Three in the Bed
@@ -30,6 +31,12 @@ const SEGMENT_KEYS: Record<string, keyof CricketState> = {
 const EXTRA_SEGMENTS = new Set(['T', 'D', '3B']);
 const MAX_TAPS_PER_TURN = 9;
 const SEGMENT_MAX_TAPS: Record<string, number> = {
+  '20': 9,
+  '19': 9,
+  '18': 9,
+  '17': 9,
+  '16': 9,
+  '15': 9,
   'T': 3,
   'D': 3,
   '3B': 1,
@@ -44,7 +51,7 @@ function renderMarks(count: number): React.ReactNode {
   return null;
 }
 
-export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onUndoTurn, onEndGame }: ScoreboardProps) {
+export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onUndoTurn, onEndGame, onMovePlayer }: ScoreboardProps) {
   const [cricketState, setCricketState] = useState<CricketState[]>([]);
   const [turnMarks, setTurnMarks] = useState<Record<string, number>>({});
   const [extraScores, setExtraScores] = useState<Record<string, number>>({});
@@ -238,7 +245,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
       if (!key) continue;
       totalMarks += added;
       const baseMarks = teamState ? (teamState[key] as number) : 0;
-      const newMarks = Math.min(baseMarks + added, 9);
+      const newMarks = baseMarks + added;
       (stateUpdate as any)[key] = newMarks;
 
       const marksToClose = Math.max(0, 3 - baseMarks);
@@ -286,7 +293,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
       const added = turnMarks[seg] || 0;
       if (added === 0) continue;
       const key = SEGMENT_KEYS[seg];
-      if (key) updatedTeamState[key] = Math.min((teamState?.[key] as number || 0) + added, 9);
+      if (key) updatedTeamState[key] = (teamState?.[key] as number || 0) + added;
     }
     updatedTeamState.Points = (teamState?.Points || 0) + totalPoints;
     const allClosed = SHANGHAI_SEGMENTS.every(seg => {
@@ -530,6 +537,42 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
           </Button>
         </div>
       )}
+
+      {/* Throwing Order */}
+      <Card title="Throwing Order" style={{ marginBottom: 'var(--spacing-md)' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
+          {players.map((player, index) => {
+            const isCurrentThrower = !disabled && currentPlayer?.PlayerID === player.PlayerID;
+            const teamColor = player.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)';
+            return (
+              <div
+                key={player.PlayerID}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--spacing-sm)',
+                  padding: 'var(--spacing-sm)',
+                  border: isCurrentThrower ? `2px solid ${teamColor}` : '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-sm)',
+                  backgroundColor: isCurrentThrower ? 'var(--color-surface-hover)' : undefined,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
+                  <strong style={{ minWidth: 24 }}>{index + 1}.</strong>
+                  <PlayerAvatar imageData={player.ImageData} name={`${player.FirstName} ${player.LastName}`} size={28} themeColor={player.ThemeColor} />
+                  <span style={{ fontWeight: isCurrentThrower ? 700 : 400 }}>{player.FirstName} {player.LastName}</span>
+                  {isCurrentThrower && <span style={{ fontSize: '0.75rem', color: teamColor, fontWeight: 700 }}>🎯</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <Button size="sm" variant="ghost" onClick={() => onMovePlayer(player.PlayerID, -1)} disabled={disabled || index === 0}>↑</Button>
+                  <Button size="sm" variant="ghost" onClick={() => onMovePlayer(player.PlayerID, 1)} disabled={disabled || index === players.length - 1}>↓</Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
 
       {/* Turn History */}
       {turns.length > 0 && (

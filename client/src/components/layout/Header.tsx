@@ -1,11 +1,17 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useTheme } from '../../contexts/ThemeContext';
 import type { ThemeName } from '../../themes';
+import { isAudioEnabled, setAudioEnabled } from '../../utils/announcer';
 
 export function Header() {
   const { themeName, setTheme } = useTheme();
   const location = useLocation();
+  const [audioOn, setAudioOn] = useState(true);
+
+  useEffect(() => {
+    setAudioOn(isAudioEnabled());
+  }, []);
 
   const navItems = [
     { path: '/', label: '🏠 Home' },
@@ -34,6 +40,31 @@ export function Header() {
         </Link>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-xs)' }}>
+          <button
+            type="button"
+            aria-label={audioOn ? 'Turn sound off' : 'Turn sound on'}
+            title={audioOn ? 'Sound on' : 'Sound off'}
+            onClick={() => {
+              const next = !audioOn;
+              setAudioOn(next);
+              setAudioEnabled(next);
+            }}
+            style={{
+              minWidth: 40,
+              minHeight: 40,
+              borderRadius: 'var(--radius-sm)',
+              border: '1px solid rgba(255,255,255,0.3)',
+              background: 'rgba(255,255,255,0.15)',
+              color: 'inherit',
+              fontSize: '1rem',
+              fontWeight: 700,
+              cursor: 'pointer',
+              WebkitAppearance: 'none',
+              appearance: 'none',
+            }}
+          >
+            {audioOn ? '🔊' : '🔇'}
+          </button>
           <select
             value={themeName}
             onChange={e => setTheme(e.target.value as ThemeName)}

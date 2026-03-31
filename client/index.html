@@ -10,7 +10,35 @@
     <title>Darts League</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="loading-msg" style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;font-size:1.2rem;color:#333;flex-direction:column;">
+        <p>Loading Darts League...</p>
+        <p id="error-msg" style="color:red;font-size:0.9rem;max-width:90%;word-break:break-word;display:none;"></p>
+      </div>
+    </div>
+    <script>
+      // Catch any JS errors and display them on screen (works for non-module scripts)
+      window.onerror = function(msg, src, line, col, err) {
+        var el = document.getElementById('error-msg');
+        if (el) { el.style.display = 'block'; el.textContent = 'Error: ' + msg + ' (' + src + ':' + line + ')'; }
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        var el = document.getElementById('error-msg');
+        if (el) { el.style.display = 'block'; el.textContent = 'Promise Error: ' + (e.reason && e.reason.message || e.reason || 'unknown'); }
+      });
+      // Timeout: if React hasn't mounted after 10s, report it
+      setTimeout(function() {
+        var root = document.getElementById('root');
+        var loadMsg = document.getElementById('loading-msg');
+        if (loadMsg && root && root.contains(loadMsg)) {
+          var el = document.getElementById('error-msg');
+          if (el) {
+            el.style.display = 'block';
+            el.textContent = 'App failed to load after 10s. The JavaScript module may not be supported by this browser. UA: ' + navigator.userAgent;
+          }
+        }
+      }, 10000);
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -1,5 +1,6 @@
 import { getPool, sql } from '../config/database';
 import { Game, Turn, CricketState, CricketTurn } from '../types';
+import { AppError } from '../middleware/errorHandler';
 
 export interface CreateGameInput {
   MatchID: number;
@@ -269,17 +270,7 @@ export const gameService = {
 
     // Ad-hoc matches: complete when any game finishes
     const isAdHoc = match.SeasonName === 'Ad-Hoc Play';
-
-    // Determine MATCH_GAME_COUNT based on context
-    const MATCH_GAME_COUNT = isAdHoc ? completedGames.length : 5;
-
-    if (!isAdHoc) {
-      // Only auto-complete after exactly 5 games are all done
-      if (completedGames.length < 5 || completedGames.length !== games.length) return;
-    } else {
-      // For ad-hoc, complete when all games are done (usually just 1)
-      if (completedGames.length !== games.length || completedGames.length === 0) return;
-    }
+    const isPlayoff = !!match.IsPlayoff;
 
     // Tally game wins per team
     const winCounts: Record<number, number> = {};
@@ -291,6 +282,18 @@ export const gameService = {
 
     const homeWins = winCounts[match.HomeTeamSeasonID] || 0;
     const awayWins = winCounts[match.AwayTeamSeasonID] || 0;
+    const majority = 3; // first to 3 game wins
+
+    if (isAdHoc) {
+      // For ad-hoc, complete when all games are done (usually just 1)
+      if (completedGames.length !== games.length || completedGames.length === 0) return;
+    } else if (isPlayoff) {
+      // Playoff: first team to win 3 games wins the match
+      if (homeWins < majority && awayWins < majority) return;
+    } else {
+      // Regular season: all 5 games must be completed
+      if (completedGames.length < 5 || completedGames.length !== games.length) return;
+    }
 
     // Determine match winner — zero-sum, no draws (5 games = odd, always a winner)
     const matchWinner = homeWins > awayWins ? match.HomeTeamSeasonID : match.AwayTeamSeasonID;
@@ -329,6 +332,28 @@ export const gameService = {
     // If this was a playoff semi-final, check if both semis are done to create finals
     if (match.IsPlayoff && match.PlayoffRound === 'Semi') {
       await this.checkSemiFinalsCompletion(match.SeasonID);
+    }
+
+    // If this was the playoff final, crown the champion and close the season
+    if (match.IsPlayoff && match.PlayoffRound === 'Final') {
+      const loser = matchWinner === match.HomeTeamSeasonID
+        ? match.AwayTeamSeasonID : match.HomeTeamSeasonID;
+
+      await pool.request()
+        .input('ts', sql.Int, loser)
+        .query('UPDATE TeamSeasons SET IsEliminated = 1 WHERE TeamSeasonID = @ts');
+
+      await pool.request()
+        .input('seasonId', sql.Int, match.SeasonID)
+        .input('champion', sql.Int, matchWinner)
+        .query(`
+          UPDATE Seasons
+          SET Status = 'Completed',
+              ChampionTeamSeasonID = @champion,
+              IsActive = 0,
+              UpdatedAt = SYSUTCDATETIME()
+          WHERE SeasonID = @seasonId
+        `);
     }
   },
 
@@ -454,51 +479,47 @@ export const gameService = {
     if ((gameType === 'Cricket' || gameType === 'Shanghai') && lastTurn.Details) {
       try {
         const details = JSON.parse(lastTurn.Details);
-        if (details.segment && details.marks) {
-          const SEGMENT_KEYS: Record<string, string> = {
-            '20': 'Seg20', '19': 'Seg19', '18': 'Seg18', '17': 'Seg17',
-            '16': 'Seg16', '15': 'Seg15', 'Bull': 'SegBull',
-            'T': 'SegTriples', 'D': 'SegDoubles', '3B': 'SegThreeInBed',
-          };
-          const segKey = SEGMENT_KEYS[details.segment];
-          if (segKey) {
-            // Get current cricket state for this team
-            const stateResult = await pool.request()
-              .input('gameId', sql.Int, gameId)
-              .input('tsId', sql.Int, lastTurn.TeamSeasonID)
-              .query('SELECT * FROM CricketState WHERE GameID = @gameId AND TeamSeasonID = @tsId');
+        const SEGMENT_KEYS: Record<string, string> = {
+          '20': 'Seg20', '19': 'Seg19', '18': 'Seg18', '17': 'Seg17',
+          '16': 'Seg16', '15': 'Seg15', 'Bull': 'SegBull',
+          'T': 'SegTriples', 'D': 'SegDoubles', '3B': 'SegThreeInBed',
+        };
 
-            if (stateResult.recordset.length > 0) {
-              const currentState = stateResult.recordset[0];
-              const currentMarks = currentState[segKey] || 0;
-              const newMarks = Math.max(0, currentMarks - details.marks);
-              const pointsToRemove = lastTurn.Score || 0;
+        const stateResult = await pool.request()
+          .input('gameId', sql.Int, gameId)
+          .input('tsId', sql.Int, lastTurn.TeamSeasonID)
+          .query('SELECT * FROM CricketState WHERE GameID = @gameId AND TeamSeasonID = @tsId');
 
-              await pool.request()
-                .input('gameId', sql.Int, gameId)
-                .input('tsId', sql.Int, lastTurn.TeamSeasonID)
-                .input('newMarks', sql.Int, newMarks)
-                .input('pointsToRemove', sql.Int, pointsToRemove)
-                .query(`
-                  UPDATE CricketState
-                  SET ${segKey} = @newMarks, Points = CASE WHEN Points - @pointsToRemove < 0 THEN 0 ELSE Points - @pointsToRemove END
-                  WHERE GameID = @gameId AND TeamSeasonID = @tsId
-                `);
-            }
-          }
-        }
-        // Handle Shanghai bonus undo
-        if (lastTurn.IsShanghaiBonus && lastTurn.Score) {
-          await pool.request()
+        if (stateResult.recordset.length > 0) {
+          const currentState = stateResult.recordset[0];
+          const segmentMarks = details.taps && typeof details.taps === 'object'
+            ? details.taps
+            : (details.segment && details.marks ? { [details.segment]: details.marks } : {});
+
+          const sets: string[] = [];
+          const request = pool.request()
             .input('gameId', sql.Int, gameId)
             .input('tsId', sql.Int, lastTurn.TeamSeasonID)
-            .input('score', sql.Int, lastTurn.Score)
-            .query(`
-              UPDATE CricketState
-              SET Points = CASE WHEN Points - @score < 0 THEN 0 ELSE Points - @score END
-              WHERE GameID = @gameId AND TeamSeasonID = @tsId
-            `);
+            .input('pointsToRemove', sql.Int, lastTurn.Score || 0);
+
+          for (const [segment, marks] of Object.entries(segmentMarks)) {
+            const segKey = SEGMENT_KEYS[segment];
+            if (!segKey) continue;
+            const currentMarks = currentState[segKey] || 0;
+            const paramName = `new${segKey}`;
+            sets.push(`${segKey} = @${paramName}`);
+            request.input(paramName, sql.Int, Math.max(0, currentMarks - Number(marks || 0)));
+          }
+
+          sets.push('Points = CASE WHEN Points - @pointsToRemove < 0 THEN 0 ELSE Points - @pointsToRemove END');
+
+          await request.query(`
+            UPDATE CricketState
+            SET ${sets.join(', ')}
+            WHERE GameID = @gameId AND TeamSeasonID = @tsId
+          `);
         }
+
       } catch {
         // If Details JSON is malformed, just delete the turn without rollback
       }
@@ -709,6 +730,34 @@ export const gameService = {
     }
   },
 
+  async reorderGamePlayers(gameId: number, orderedPlayerIds: number[]): Promise<void> {
+    const pool = await getPool();
+    const existingPlayers = await this.getGamePlayers(gameId);
+
+    if (existingPlayers.length !== orderedPlayerIds.length) {
+      throw new AppError(400, 'Player order must include every player in the game');
+    }
+
+    const existingIds = new Set(existingPlayers.map(player => player.PlayerID));
+    for (const playerId of orderedPlayerIds) {
+      if (!existingIds.has(playerId)) {
+        throw new AppError(400, 'Player order contains an invalid player');
+      }
+    }
+
+    for (let index = 0; index < orderedPlayerIds.length; index++) {
+      await pool.request()
+        .input('gameId', sql.Int, gameId)
+        .input('playerId', sql.Int, orderedPlayerIds[index])
+        .input('order', sql.Int, index + 1)
+        .query(`
+          UPDATE GamePlayers
+          SET PlayerOrder = @order
+          WHERE GameID = @gameId AND PlayerID = @playerId
+        `);
+    }
+  },
+
   async getGamePlayers(gameId: number): Promise<any[]> {
     const pool = await getPool();
     const result = await pool.request()
@@ -718,7 +767,7 @@ export const gameService = {
         FROM GamePlayers gp
         JOIN Players p ON gp.PlayerID = p.PlayerID
         WHERE gp.GameID = @gameId
-        ORDER BY gp.TeamSeasonID, gp.PlayerOrder
+        ORDER BY gp.PlayerOrder, gp.TeamSeasonID, gp.PlayerID
       `);
     return result.recordset;
   },

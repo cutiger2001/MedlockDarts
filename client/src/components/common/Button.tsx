@@ -36,17 +36,17 @@ export function Button({
     primary: {
       backgroundColor: 'var(--color-primary)',
       color: 'var(--color-text-on-primary)',
-      border: 'none',
+      border: '2px solid var(--color-primary)',
     },
     secondary: {
       backgroundColor: 'var(--color-secondary)',
       color: 'var(--color-text-on-secondary)',
-      border: 'none',
+      border: '2px solid var(--color-secondary)',
     },
     danger: {
       backgroundColor: 'var(--color-danger)',
       color: '#fff',
-      border: 'none',
+      border: '2px solid var(--color-danger)',
     },
     ghost: {
       backgroundColor: 'transparent',

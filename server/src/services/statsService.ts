@@ -127,12 +127,18 @@ export const statsService = {
     const request7 = pool.request().input('playerId', sql.Int, playerId);
     if (seasonId) request7.input('seasonId', sql.Int, seasonId);
     const allStarTurns = await request7.query(`
-      SELECT ISNULL(SUM(CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)), 0) AS Cnt
+      SELECT ISNULL(SUM(
+        CASE
+          WHEN JSON_VALUE(t.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)
+          WHEN JSON_VALUE(t.Details, '$.allStarLevel') IS NOT NULL THEN 1
+          ELSE 0
+        END
+      ), 0) AS Cnt
       FROM Turns t
       JOIN Games g ON t.GameID = g.GameID
       WHERE t.PlayerID = @playerId
         AND t.Details IS NOT NULL
-        AND JSON_VALUE(t.Details, '$.allStarCount') IS NOT NULL
+        AND (JSON_VALUE(t.Details, '$.allStarCount') IS NOT NULL OR JSON_VALUE(t.Details, '$.allStarLevel') IS NOT NULL)
         ${turnsFilter}
     `);
 
@@ -140,12 +146,18 @@ export const statsService = {
     const request8 = pool.request().input('playerId', sql.Int, playerId);
     if (seasonId) request8.input('seasonId', sql.Int, seasonId);
     const allStarCricket = await request8.query(`
-      SELECT ISNULL(SUM(CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT)), 0) AS Cnt
+      SELECT ISNULL(SUM(
+        CASE
+          WHEN JSON_VALUE(ct.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT)
+          WHEN JSON_VALUE(ct.Details, '$.allStarLevel') IS NOT NULL THEN 1
+          ELSE 0
+        END
+      ), 0) AS Cnt
       FROM CricketTurns ct
       JOIN Games g ON ct.GameID = g.GameID
       WHERE ct.PlayerID = @playerId
         AND ct.Details IS NOT NULL
-        AND JSON_VALUE(ct.Details, '$.allStarCount') IS NOT NULL
+        AND (JSON_VALUE(ct.Details, '$.allStarCount') IS NOT NULL OR JSON_VALUE(ct.Details, '$.allStarLevel') IS NOT NULL)
         ${cricketFilter}
     `);
 
@@ -199,7 +211,11 @@ export const statsService = {
           -- Close from Turns (Shanghai)
           SUM(CASE WHEN t.IsCricketClose = 1 THEN 1 ELSE 0 END) AS TurnsCloseCount,
           -- AllStars from Turns
-          ISNULL(SUM(CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)), 0) AS TurnsAllStarCount,
+          ISNULL(SUM(CASE
+            WHEN JSON_VALUE(t.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)
+            WHEN JSON_VALUE(t.Details, '$.allStarLevel') IS NOT NULL THEN 1
+            ELSE 0
+          END), 0) AS TurnsAllStarCount,
           -- Wins
           COUNT(DISTINCT CASE WHEN g.WinnerTeamSeasonID = gp.TeamSeasonID THEN g.GameID END) AS Wins
         FROM GamePlayers gp
@@ -221,7 +237,11 @@ export const statsService = {
           COUNT(DISTINCT CONCAT(ct.GameID, '-', ct.RoundNumber)) AS CricketRounds,
           SUM(ISNULL(ct.MarksScored, 0)) AS CricketMarks,
           SUM(CASE WHEN ct.IsCricketClose = 1 THEN 1 ELSE 0 END) AS CricketCloseCount,
-          ISNULL(SUM(CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT)), 0) AS CricketAllStarCount
+          ISNULL(SUM(CASE
+            WHEN JSON_VALUE(ct.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT)
+            WHEN JSON_VALUE(ct.Details, '$.allStarLevel') IS NOT NULL THEN 1
+            ELSE 0
+          END), 0) AS CricketAllStarCount
         FROM CricketTurns ct
         JOIN Games g ON ct.GameID = g.GameID
         JOIN GamePlayers gp ON gp.GameID = g.GameID AND gp.PlayerID = @playerId
@@ -319,12 +339,12 @@ export const statsService = {
               ELSE 0 END AS OutAvg,
             CASE WHEN SUM(CASE WHEN t.IsDoubleIn = 1 THEN 1 ELSE 0 END) > 0
               THEN AVG(CASE WHEN t.IsDoubleIn = 1 THEN CAST(COALESCE(CAST(JSON_VALUE(t.Details, '$.inScore') AS INT), t.Score) AS FLOAT) END)
-              ELSE 0 END AS InAvg,
-            ISNULL(SUM(CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)), 0) AS TurnAllStars
+              ELSE 0 END AS InAvg
           FROM Turns t
           JOIN Games g ON t.GameID = g.GameID
           JOIN Matches m ON g.MatchID = m.MatchID
-          WHERE m.SeasonID = @seasonId AND t.PlayerID IN (SELECT PlayerID FROM PlayerGames)
+          WHERE m.SeasonID = @seasonId AND g.GameType = 'X01'
+            AND t.PlayerID IN (SELECT PlayerID FROM PlayerGames)
           GROUP BY t.PlayerID
         ),
         CricketStats AS (
@@ -332,12 +352,10 @@ export const statsService = {
             SUM(src.MarksScored) AS TotalMarks,
             COUNT(DISTINCT CONCAT(src.GameID, '-', src.RoundNumber)) AS TotalRounds,
             SUM(src.DartsThrown) AS TotalCricketDarts,
-            SUM(CASE WHEN src.IsCricketClose = 1 THEN 1 ELSE 0 END) AS CloseCount,
-            SUM(src.AllStarHit) AS CricketAllStars
+            SUM(CASE WHEN src.IsCricketClose = 1 THEN 1 ELSE 0 END) AS CloseCount
           FROM (
             SELECT ct.PlayerID, ct.MarksScored, ct.DartsThrown, ct.GameID, ct.RoundNumber,
-              ct.IsCricketClose,
-              ISNULL(CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT), 0) AS AllStarHit
+              ct.IsCricketClose
             FROM CricketTurns ct
             JOIN Games g ON ct.GameID = g.GameID
             JOIN Matches m ON g.MatchID = m.MatchID
@@ -345,8 +363,7 @@ export const statsService = {
               AND ct.PlayerID IN (SELECT PlayerID FROM PlayerGames)
             UNION ALL
             SELECT t.PlayerID, t.MarksScored, t.DartsThrown, t.GameID, t.RoundNumber,
-              t.IsCricketClose,
-              ISNULL(CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT), 0) AS AllStarHit
+              t.IsCricketClose
             FROM Turns t
             JOIN Games g ON t.GameID = g.GameID
             JOIN Matches m ON g.MatchID = m.MatchID
@@ -354,6 +371,122 @@ export const statsService = {
               AND t.PlayerID IN (SELECT PlayerID FROM PlayerGames)
           ) src
           GROUP BY src.PlayerID
+        ),
+        AllStars AS (
+          SELECT src.PlayerID, SUM(src.AllStarHit) AS TotalAllStars
+          FROM (
+            SELECT t.PlayerID,
+              CASE
+                WHEN JSON_VALUE(t.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)
+                WHEN JSON_VALUE(t.Details, '$.allStarLevel') IS NOT NULL THEN 1
+                ELSE 0
+              END AS AllStarHit
+            FROM Turns t
+            JOIN Games g ON t.GameID = g.GameID
+            JOIN Matches m ON g.MatchID = m.MatchID
+            WHERE m.SeasonID = @seasonId
+              AND t.PlayerID IN (SELECT PlayerID FROM PlayerGames)
+              AND t.Details IS NOT NULL
+            UNION ALL
+            SELECT ct.PlayerID,
+              CASE
+                WHEN JSON_VALUE(ct.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT)
+                WHEN JSON_VALUE(ct.Details, '$.allStarLevel') IS NOT NULL THEN 1
+                ELSE 0
+              END AS AllStarHit
+            FROM CricketTurns ct
+            JOIN Games g ON ct.GameID = g.GameID
+            JOIN Matches m ON g.MatchID = m.MatchID
+            WHERE m.SeasonID = @seasonId AND g.GameType = 'Cricket'
+              AND ct.PlayerID IN (SELECT PlayerID FROM PlayerGames)
+              AND ct.Details IS NOT NULL
+          ) src
+          GROUP BY src.PlayerID
+        ),
+        First9Stats AS (
+          SELECT pt.PlayerID,
+            CASE WHEN SUM(pt.DartsThrown) > 0
+              THEN CAST(SUM(pt.Score) AS FLOAT) / SUM(pt.DartsThrown) * 3
+              ELSE 0 END AS First9Avg
+          FROM (
+            SELECT t.PlayerID, t.GameID, t.Score, t.DartsThrown,
+              ROW_NUMBER() OVER (PARTITION BY t.GameID, t.PlayerID ORDER BY t.TurnNumber) AS TurnSeq
+            FROM Turns t
+            JOIN Games g ON t.GameID = g.GameID
+            JOIN Matches m ON g.MatchID = m.MatchID
+            WHERE m.SeasonID = @seasonId AND g.GameType = 'X01' AND g.Status = 'Completed'
+              AND t.PlayerID IN (SELECT PlayerID FROM PlayerGames)
+          ) pt
+          WHERE pt.TurnSeq <= 3
+          GROUP BY pt.PlayerID
+        ),
+        PhaseStats AS (
+          SELECT t.PlayerID,
+            CASE WHEN SUM(CASE WHEN t.RemainingScore IS NOT NULL AND (t.RemainingScore + t.Score) > 170 THEN t.DartsThrown ELSE 0 END) > 0
+              THEN CAST(SUM(CASE WHEN t.RemainingScore IS NOT NULL AND (t.RemainingScore + t.Score) > 170 THEN t.Score ELSE 0 END) AS FLOAT)
+                   / SUM(CASE WHEN t.RemainingScore IS NOT NULL AND (t.RemainingScore + t.Score) > 170 THEN t.DartsThrown ELSE 0 END) * 3
+              ELSE 0 END AS ScoringPPR,
+            CASE WHEN SUM(CASE WHEN t.RemainingScore IS NOT NULL AND (t.RemainingScore + t.Score) <= 170 THEN t.DartsThrown ELSE 0 END) > 0
+              THEN CAST(SUM(CASE WHEN t.RemainingScore IS NOT NULL AND (t.RemainingScore + t.Score) <= 170 THEN t.Score ELSE 0 END) AS FLOAT)
+                   / SUM(CASE WHEN t.RemainingScore IS NOT NULL AND (t.RemainingScore + t.Score) <= 170 THEN t.DartsThrown ELSE 0 END) * 3
+              ELSE 0 END AS CheckoutPPR
+          FROM Turns t
+          JOIN Games g ON t.GameID = g.GameID
+          JOIN Matches m ON g.MatchID = m.MatchID
+          WHERE m.SeasonID = @seasonId AND g.GameType = 'X01' AND g.Status = 'Completed'
+            AND t.PlayerID IN (SELECT PlayerID FROM PlayerGames)
+          GROUP BY t.PlayerID
+        ),
+        CheckoutPct AS (
+          SELECT co.PlayerID,
+            SUM(co.IsCheckout) AS CheckoutHits,
+            COUNT(*) AS CheckoutAttempts
+          FROM (
+            -- Turns WITH dart-level details: per-dart CO opportunities
+            SELECT t.PlayerID,
+              (t.RemainingScore + t.Score) - ISNULL(
+                (SELECT SUM(CAST(JSON_VALUE(p.value, '$.score') AS INT))
+                 FROM OPENJSON(t.Details, '$.darts') p
+                 WHERE CAST(p.[key] AS INT) < CAST(d.[key] AS INT)), 0
+              ) AS RemBefore,
+              CASE WHEN t.RemainingScore = 0
+                   AND CAST(d.[key] AS INT) = (SELECT MAX(CAST(d2.[key] AS INT)) FROM OPENJSON(t.Details, '$.darts') d2)
+                   AND CAST(ISNULL(JSON_VALUE(d.value, '$.multiplier'), '0') AS INT) = 2
+                   THEN 1 ELSE 0 END AS IsCheckout
+            FROM Turns t
+            JOIN Games g ON t.GameID = g.GameID
+            JOIN Matches m ON g.MatchID = m.MatchID
+            CROSS APPLY OPENJSON(t.Details, '$.darts') d
+            WHERE m.SeasonID = @seasonId AND g.GameType = 'X01' AND g.Status = 'Completed'
+              AND t.PlayerID IN (SELECT PlayerID FROM PlayerGames)
+              AND t.Details IS NOT NULL AND ISJSON(t.Details) = 1
+              AND JSON_QUERY(t.Details, '$.darts') IS NOT NULL
+            UNION ALL
+            -- Turns WITHOUT dart details: fall back to turn-level check
+            SELECT t.PlayerID,
+              (t.RemainingScore + t.Score) AS RemBefore,
+              CASE WHEN t.IsGameOut = 1 THEN 1 ELSE 0 END AS IsCheckout
+            FROM Turns t
+            JOIN Games g ON t.GameID = g.GameID
+            JOIN Matches m ON g.MatchID = m.MatchID
+            WHERE m.SeasonID = @seasonId AND g.GameType = 'X01' AND g.Status = 'Completed'
+              AND t.PlayerID IN (SELECT PlayerID FROM PlayerGames)
+              AND (t.Details IS NULL OR ISJSON(t.Details) = 0 OR JSON_QUERY(t.Details, '$.darts') IS NULL)
+              AND t.RemainingScore IS NOT NULL
+              AND ((t.RemainingScore + t.Score) <= 40 AND (t.RemainingScore + t.Score) % 2 = 0 OR (t.RemainingScore + t.Score) = 50)
+              AND (t.RemainingScore + t.Score) > 0
+          ) co
+          WHERE co.RemBefore > 0 AND (co.RemBefore = 50 OR (co.RemBefore <= 40 AND co.RemBefore % 2 = 0))
+          GROUP BY co.PlayerID
+        ),
+        WinStats AS (
+          SELECT gp.PlayerID,
+            COUNT(DISTINCT CASE WHEN g.WinnerTeamSeasonID = gp.TeamSeasonID THEN g.GameID END) AS GamesWon
+          FROM GamePlayers gp
+          JOIN Games g ON gp.GameID = g.GameID
+          JOIN Matches m ON g.MatchID = m.MatchID
+          WHERE m.SeasonID = @seasonId AND g.Status = 'Completed'
+          GROUP BY gp.PlayerID
         )
         SELECT p.PlayerID, p.FirstName, p.LastName,
           (SELECT COUNT(*) FROM PlayerGames pg WHERE pg.PlayerID = p.PlayerID) AS GamesPlayed,
@@ -368,13 +501,24 @@ export const statsService = {
           ISNULL(x.OutAvg, 0) AS OutAvg,
           ISNULL(x.InAvg, 0) AS InAvg,
           ISNULL(c.CloseCount, 0) AS CloseCount,
-          ISNULL(x.TurnAllStars, 0) + ISNULL(c.CricketAllStars, 0) AS AllStarCount,
+          ISNULL(a.TotalAllStars, 0) AS AllStarCount,
           ISNULL(x.TotalX01Darts, 0) AS X01Darts,
-          ISNULL(c.TotalCricketDarts, 0) AS CricketDarts
+          ISNULL(c.TotalCricketDarts, 0) AS CricketDarts,
+          ISNULL(f.First9Avg, 0) AS First9Avg,
+          ISNULL(ph.ScoringPPR, 0) AS ScoringPPR,
+          ISNULL(ph.CheckoutPPR, 0) AS CheckoutPPR,
+          ISNULL(co.CheckoutHits, 0) AS CheckoutHits,
+          ISNULL(co.CheckoutAttempts, 0) AS CheckoutAttempts,
+          ISNULL(w.GamesWon, 0) AS GamesWon
         FROM Players p
         JOIN (SELECT DISTINCT PlayerID FROM PlayerGames) pg ON p.PlayerID = pg.PlayerID
         LEFT JOIN X01Stats x ON p.PlayerID = x.PlayerID
         LEFT JOIN CricketStats c ON p.PlayerID = c.PlayerID
+        LEFT JOIN AllStars a ON p.PlayerID = a.PlayerID
+        LEFT JOIN First9Stats f ON p.PlayerID = f.PlayerID
+        LEFT JOIN PhaseStats ph ON p.PlayerID = ph.PlayerID
+        LEFT JOIN CheckoutPct co ON p.PlayerID = co.PlayerID
+        LEFT JOIN WinStats w ON p.PlayerID = w.PlayerID
         ORDER BY PPD DESC
       `);
     return result.recordset;
@@ -394,7 +538,8 @@ export const statsService = {
       SELECT
         g.GameID, g.GameType, g.GameNumber, g.X01Target, g.Status AS GameStatus,
         g.WinnerTeamSeasonID,
-        m.MatchID, m.RoundNumber,
+        m.MatchID, m.RoundNumber, COALESCE(m.MatchDate, g.CreatedAt) AS MatchDate, m.IsPlayoff, m.PlayoffRound,
+        s.SeasonName,
         gp.TeamSeasonID,
         -- X01 stats from Turns
         CASE WHEN g.GameType = 'X01' AND SUM(t.DartsThrown) > 0
@@ -424,8 +569,16 @@ export const statsService = {
             FROM CricketTurns ct WHERE ct.GameID = g.GameID AND ct.PlayerID = @playerId), 0)
         ELSE MAX(CASE WHEN t.IsCricketClose = 1 THEN 1 ELSE 0 END) END AS HadClose,
         -- AllStars from both tables
-        ISNULL(SUM(CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)), 0) +
-          ISNULL((SELECT SUM(CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT))
+        ISNULL(SUM(CASE
+          WHEN JSON_VALUE(t.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)
+          WHEN JSON_VALUE(t.Details, '$.allStarLevel') IS NOT NULL THEN 1
+          ELSE 0
+        END), 0) +
+          ISNULL((SELECT SUM(CASE
+            WHEN JSON_VALUE(ct.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT)
+            WHEN JSON_VALUE(ct.Details, '$.allStarLevel') IS NOT NULL THEN 1
+            ELSE 0
+          END)
           FROM CricketTurns ct WHERE ct.GameID = g.GameID AND ct.PlayerID = @playerId), 0) AS AllStarCount,
         -- Cricket/Shanghai darts
         CASE WHEN g.GameType = 'Cricket' THEN
@@ -434,12 +587,13 @@ export const statsService = {
         ELSE NULL END AS CricketDarts
       FROM Games g
       JOIN Matches m ON g.MatchID = m.MatchID
+      JOIN Seasons s ON m.SeasonID = s.SeasonID
       JOIN GamePlayers gp ON gp.GameID = g.GameID AND gp.PlayerID = @playerId
       LEFT JOIN Turns t ON t.GameID = g.GameID AND t.PlayerID = @playerId
       WHERE g.Status = 'Completed' ${seasonFilter}
       GROUP BY g.GameID, g.GameType, g.GameNumber, g.X01Target, g.Status,
-               g.WinnerTeamSeasonID, m.MatchID, m.RoundNumber, gp.TeamSeasonID
-      ORDER BY m.RoundNumber, g.GameNumber
+               g.WinnerTeamSeasonID, m.MatchID, m.RoundNumber, COALESCE(m.MatchDate, g.CreatedAt), m.IsPlayoff, m.PlayoffRound, s.SeasonName, gp.TeamSeasonID
+      ORDER BY m.IsPlayoff ASC, COALESCE(m.MatchDate, g.CreatedAt) DESC, m.RoundNumber DESC, g.GameNumber DESC
     `);
     return result.recordset;
   },
@@ -462,8 +616,7 @@ export const statsService = {
             SUM(t.Score) AS TotalX01Score,
             SUM(t.DartsThrown) AS TotalX01Darts,
             SUM(CASE WHEN t.IsDoubleIn = 1 THEN 1 ELSE 0 END) AS InCount,
-            SUM(CASE WHEN t.IsGameOut = 1 THEN 1 ELSE 0 END) AS OutCount,
-            ISNULL(SUM(CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)), 0) AS TurnAllStars
+            SUM(CASE WHEN t.IsGameOut = 1 THEN 1 ELSE 0 END) AS OutCount
           FROM Turns t
           JOIN Games g ON t.GameID = g.GameID
           JOIN Matches m ON g.MatchID = m.MatchID
@@ -476,20 +629,17 @@ export const statsService = {
             SUM(src.MarksScored) AS TotalMarks,
             COUNT(DISTINCT CONCAT(src.GameID, '-', src.RoundNumber, '-', src.PlayerID)) AS TotalRounds,
             SUM(src.DartsThrown) AS TotalDarts,
-            SUM(CASE WHEN src.IsCricketClose = 1 THEN 1 ELSE 0 END) AS CloseCount,
-            SUM(src.AllStarHit) AS CricketAllStars
+            SUM(CASE WHEN src.IsCricketClose = 1 THEN 1 ELSE 0 END) AS CloseCount
           FROM (
             SELECT ct.GameID, ct.RoundNumber, ct.PlayerID, ct.MarksScored, ct.DartsThrown,
-              ct.IsCricketClose,
-              ISNULL(CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT), 0) AS AllStarHit
+              ct.IsCricketClose
             FROM CricketTurns ct
             JOIN Games g ON ct.GameID = g.GameID
             JOIN Matches m ON g.MatchID = m.MatchID
             WHERE m.SeasonID = @seasonId AND g.GameType = 'Cricket' AND g.Status = 'Completed'
             UNION ALL
             SELECT t.GameID, t.RoundNumber, t.PlayerID, t.MarksScored, t.DartsThrown,
-              t.IsCricketClose,
-              ISNULL(CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT), 0) AS AllStarHit
+              t.IsCricketClose
             FROM Turns t
             JOIN Games g ON t.GameID = g.GameID
             JOIN Matches m ON g.MatchID = m.MatchID
@@ -497,6 +647,46 @@ export const statsService = {
           ) src
           JOIN GamePlayers gp ON gp.GameID = src.GameID AND gp.PlayerID = src.PlayerID
           GROUP BY gp.TeamSeasonID
+        ),
+        TeamAllStars AS (
+          SELECT gp.TeamSeasonID, SUM(src.AllStarHit) AS TotalAllStars
+          FROM (
+            SELECT t.GameID, t.PlayerID,
+              CASE
+                WHEN JSON_VALUE(t.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(t.Details, '$.allStarCount') AS INT)
+                WHEN JSON_VALUE(t.Details, '$.allStarLevel') IS NOT NULL THEN 1
+                ELSE 0
+              END AS AllStarHit
+            FROM Turns t
+            JOIN Games g ON t.GameID = g.GameID
+            JOIN Matches m ON g.MatchID = m.MatchID
+            WHERE m.SeasonID = @seasonId AND g.Status = 'Completed'
+              AND t.Details IS NOT NULL
+            UNION ALL
+            SELECT ct.GameID, ct.PlayerID,
+              CASE
+                WHEN JSON_VALUE(ct.Details, '$.allStarCount') IS NOT NULL THEN CAST(JSON_VALUE(ct.Details, '$.allStarCount') AS INT)
+                WHEN JSON_VALUE(ct.Details, '$.allStarLevel') IS NOT NULL THEN 1
+                ELSE 0
+              END AS AllStarHit
+            FROM CricketTurns ct
+            JOIN Games g ON ct.GameID = g.GameID
+            JOIN Matches m ON g.MatchID = m.MatchID
+            WHERE m.SeasonID = @seasonId AND g.GameType = 'Cricket' AND g.Status = 'Completed'
+              AND ct.Details IS NOT NULL
+          ) src
+          JOIN GamePlayers gp ON gp.GameID = src.GameID AND gp.PlayerID = src.PlayerID
+          GROUP BY gp.TeamSeasonID
+        ),
+        GameTypeWins AS (
+          SELECT g.WinnerTeamSeasonID AS TeamSeasonID,
+            SUM(CASE WHEN g.GameType = 'X01' AND g.X01Target = 501 THEN 1 ELSE 0 END) AS Wins501,
+            SUM(CASE WHEN g.GameType = 'X01' AND g.X01Target = 301 THEN 1 ELSE 0 END) AS Wins301,
+            SUM(CASE WHEN g.GameType = 'Cricket' THEN 1 ELSE 0 END) AS WinsCricket
+          FROM Games g
+          JOIN Matches m ON g.MatchID = m.MatchID
+          WHERE m.SeasonID = @seasonId AND g.Status = 'Completed' AND g.WinnerTeamSeasonID IS NOT NULL
+          GROUP BY g.WinnerTeamSeasonID
         )
         SELECT ts.TeamSeasonID, tm.TeamName,
           p1.FirstName AS P1First, p1.LastName AS P1Last,
@@ -512,13 +702,18 @@ export const statsService = {
           ISNULL(x.InCount, 0) AS InCount,
           ISNULL(x.OutCount, 0) AS OutCount,
           ISNULL(c.CloseCount, 0) AS CloseCount,
-          ISNULL(x.TurnAllStars, 0) + ISNULL(c.CricketAllStars, 0) AS AllStarCount
+          ISNULL(a.TotalAllStars, 0) AS AllStarCount,
+          ISNULL(gw.Wins501, 0) AS Wins501,
+          ISNULL(gw.Wins301, 0) AS Wins301,
+          ISNULL(gw.WinsCricket, 0) AS WinsCricket
         FROM TeamSeasons ts
         JOIN Teams tm ON ts.TeamID = tm.TeamID
         JOIN Players p1 ON tm.Player1ID = p1.PlayerID
         LEFT JOIN Players p2 ON tm.Player2ID = p2.PlayerID
         LEFT JOIN TeamX01 x ON ts.TeamSeasonID = x.TeamSeasonID
         LEFT JOIN TeamCricket c ON ts.TeamSeasonID = c.TeamSeasonID
+        LEFT JOIN TeamAllStars a ON ts.TeamSeasonID = a.TeamSeasonID
+        LEFT JOIN GameTypeWins gw ON ts.TeamSeasonID = gw.TeamSeasonID
         WHERE ts.SeasonID = @seasonId
         ORDER BY PPD DESC
       `);

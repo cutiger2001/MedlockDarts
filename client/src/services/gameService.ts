@@ -28,6 +28,8 @@ export const gameService = {
   getPlayers: (gameId: number) => api.get<GamePlayer[]>(`/games/${gameId}/players`),
   addPlayers: (gameId: number, players: { PlayerID: number; TeamSeasonID: number; PlayerOrder: number }[]) =>
     api.post(`/games/${gameId}/players`, { players }),
+  reorderPlayers: (gameId: number, playerIds: number[]) =>
+    api.put<GamePlayer[]>(`/games/${gameId}/players/order`, { playerIds }),
 
   // Turns
   getTurns: (gameId: number) => api.get<Turn[]>(`/games/${gameId}/turns`),

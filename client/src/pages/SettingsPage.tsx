@@ -5,9 +5,10 @@ import { useSettings } from '../contexts/SettingsContext';
 import { isAudioEnabled, setAudioEnabled } from '../utils/announcer';
 
 export function SettingsPage() {
-  const { settings, updateSettings } = useSettings();
+  const { settings, updateSettings, adminUnlocked, unlockAdmin, lockAdmin } = useSettings();
   const [newScore, setNewScore] = useState('');
   const [audioOn, setAudioOn] = useState(isAudioEnabled);
+  const [adminPasswordDraft, setAdminPasswordDraft] = useState('');
 
   const addFastScore = () => {
     const val = Number(newScore);
@@ -137,6 +138,37 @@ export function SettingsPage() {
             </div>
           </Button>
         </div>
+      </Card>
+
+      <Card title="League Admin" style={{ marginBottom: 'var(--spacing-lg)' }}>
+        <p style={{ fontSize: '0.85rem', color: 'var(--color-text-light)', marginBottom: 'var(--spacing-md)' }}>
+          Unlock admin mode here before editing league formats, schedules, team setup, or deleting seasons.
+        </p>
+        {adminUnlocked ? (
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ fontWeight: 700, color: 'var(--color-success)' }}>Admin mode is unlocked</div>
+            <Button variant="ghost" onClick={lockAdmin}>Lock Admin</Button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 'var(--spacing-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              type="password"
+              value={adminPasswordDraft}
+              onChange={e => setAdminPasswordDraft(e.target.value)}
+              placeholder="Enter admin password"
+              style={{ minWidth: 220, minHeight: 'var(--tap-target)' }}
+            />
+            <Button
+              onClick={() => {
+                if (!adminPasswordDraft.trim()) return;
+                unlockAdmin(adminPasswordDraft.trim());
+                setAdminPasswordDraft('');
+              }}
+            >
+              Unlock Admin
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   );

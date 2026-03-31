@@ -11,10 +11,11 @@ import { RoundTheWorldScoreboard } from '../components/games/RoundTheWorldScoreb
 import { Cork } from '../components/match/Cork';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
-import { announceGameWinner, announceMatchWinner } from '../utils/announcer';
+import { announceGameWinner, announceMatchWinner, announceChampion } from '../utils/announcer';
 
 const MATCH_GAME_COUNT = 5;
 const CORK_KEY = (id: number) => `cork-order-${id}`;
+const MATCH_BASE_ORDER_KEY = (id: number) => `match-base-order-${id}`;
 
 export function GamePage() {
   const { gameId } = useParams();
@@ -29,6 +30,7 @@ export function GamePage() {
   const [allGames, setAllGames] = useState<Game[]>([]);
   const [gameFormats, setGameFormats] = useState<SeasonGameFormat[]>([]);
   const [orderedPlayers, setOrderedPlayers] = useState<GamePlayer[] | null>(null);
+  const [baseMatchOrder, setBaseMatchOrder] = useState<GamePlayer[] | null>(null);
   const [corkDone, setCorkDone] = useState(false);
   const [showAbandon, setShowAbandon] = useState(false);
   const [isAdHoc, setIsAdHoc] = useState(false);
@@ -40,6 +42,8 @@ export function GamePage() {
     if (!gameId) return;
     try {
       setLoading(true);
+      setOrderedPlayers(null);
+      setCorkDone(false);
       const g = await gameService.getById(Number(gameId));
       setGame(g);
       if (g) {
@@ -83,6 +87,20 @@ export function GamePage() {
             const ordered = ids.map(id => p.find(pl => pl.PlayerID === id)).filter(Boolean) as GamePlayer[];
             if (ordered.length === p.length) { setOrderedPlayers(ordered); setCorkDone(true); }
           } catch { /* ignore parse errors */ }
+        }
+        if (m) {
+          const baseStored = localStorage.getItem(MATCH_BASE_ORDER_KEY(m.MatchID));
+          if (baseStored) {
+            try {
+              const ids: number[] = JSON.parse(baseStored);
+              const baseOrder = ids.map(id => p.find(pl => pl.PlayerID === id)).filter(Boolean) as GamePlayer[];
+              if (baseOrder.length === p.length) {
+                setBaseMatchOrder(baseOrder);
+              }
+            } catch { /* ignore parse errors */ }
+          } else {
+            setBaseMatchOrder(null);
+          }
         }
 
         // Auto-start if not started and players exist
@@ -160,10 +178,14 @@ export function GamePage() {
     const updatedGames = await gameService.getByMatch(game.MatchID);
     const homeWins = updatedGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.HomeTeamSeasonID).length;
     const awayWins = updatedGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.AwayTeamSeasonID).length;
-    const majority = Math.ceil(MATCH_GAME_COUNT / 2);
+    const majority = 3; // first to 3 wins
     if (homeWins >= majority || awayWins >= majority) {
       const matchWinner = homeWins >= majority ? (match.HomeTeamName || 'Home') : (match.AwayTeamName || 'Away');
-      setTimeout(() => announceMatchWinner(matchWinner), 3000);
+      if (match.IsPlayoff && match.PlayoffRound === 'Final') {
+        setTimeout(() => announceChampion(matchWinner), 3000);
+      } else {
+        setTimeout(() => announceMatchWinner(matchWinner), 3000);
+      }
     }
 
     load();
@@ -173,7 +195,11 @@ export function GamePage() {
   const goToNextGame = async () => {
     if (!game || !match) return;
     const nextNum = allGames.length + 1;
-    if (nextNum > MATCH_GAME_COUNT) { navigate(`/match/${game.MatchID}`); return; }
+    // Playoff: match ends when a team clinches 3 wins; regular: 5 games max
+    const homeWinsNow = allGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.HomeTeamSeasonID).length;
+    const awayWinsNow = allGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.AwayTeamSeasonID).length;
+    const matchClinched = homeWinsNow >= 3 || awayWinsNow >= 3;
+    if (nextNum > MATCH_GAME_COUNT || matchClinched) { navigate(`/match/${game.MatchID}`); return; }
     const fmt = gameFormats.find(f => f.GameNumber === nextNum);
     if (!fmt) { navigate(`/match/${game.MatchID}`); return; }
     try {
@@ -190,10 +216,34 @@ export function GamePage() {
 
   /** Cork completion — persist order in localStorage */
   const handleCorkComplete = (ordered: GamePlayer[]) => {
-    if (!game) return;
+    if (!game || !match) return;
     setOrderedPlayers(ordered);
     setCorkDone(true);
     localStorage.setItem(CORK_KEY(game.GameID), JSON.stringify(ordered.map(p => p.PlayerID)));
+    if (game.GameNumber === 1 && ordered.length === 4) {
+      setBaseMatchOrder(ordered);
+      localStorage.setItem(MATCH_BASE_ORDER_KEY(match.MatchID), JSON.stringify(ordered.map(p => p.PlayerID)));
+    }
+  };
+
+  const movePlayerOrder = async (playerId: number, direction: -1 | 1) => {
+    if (!game) return;
+    const currentOrder = [...(orderedPlayers || players)];
+    const index = currentOrder.findIndex(player => player.PlayerID === playerId);
+    const nextIndex = index + direction;
+    if (index === -1 || nextIndex < 0 || nextIndex >= currentOrder.length) return;
+
+    [currentOrder[index], currentOrder[nextIndex]] = [currentOrder[nextIndex], currentOrder[index]];
+    setOrderedPlayers(currentOrder);
+    setCorkDone(true);
+    localStorage.setItem(CORK_KEY(game.GameID), JSON.stringify(currentOrder.map(player => player.PlayerID)));
+
+    try {
+      const updated = await gameService.reorderPlayers(game.GameID, currentOrder.map(player => player.PlayerID));
+      setPlayers(updated);
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   /** Abandon game — delete it and navigate home */
@@ -236,58 +286,103 @@ export function GamePage() {
     }
   };
 
-  // For even games (2, 4), auto-order: losing team first, reversed player order
+  const isLeagueTeamMatch = !isAdHoc
+    && players.length === 4
+    && !!match
+    && match.HomeTeamSeasonID !== match.AwayTeamSeasonID;
+  const previousGame = game ? allGames.find(item => item.GameNumber === game.GameNumber - 1) : null;
+  const gameTypeChangedFromPrevious = !!game && !!previousGame && previousGame.GameType !== game.GameType;
+
+  const getLeagueAutoOrder = (): GamePlayer[] | null => {
+    if (!game || !baseMatchOrder || baseMatchOrder.length !== 4) return null;
+    if (game.GameNumber === 2) {
+      return [...baseMatchOrder].reverse();
+    }
+    if (game.GameNumber === 4) {
+      const previousStored = previousGame ? localStorage.getItem(CORK_KEY(previousGame.GameID)) : null;
+      if (!previousStored) return null;
+      try {
+        const previousIds: number[] = JSON.parse(previousStored);
+        if (previousIds[0] === baseMatchOrder[3]?.PlayerID) {
+          return [baseMatchOrder[0], baseMatchOrder[1], baseMatchOrder[2], baseMatchOrder[3]];
+        }
+        if (previousIds[0] === baseMatchOrder[2]?.PlayerID) {
+          return [baseMatchOrder[1], baseMatchOrder[0], baseMatchOrder[2], baseMatchOrder[3]];
+        }
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  };
+
+  // Auto-order games that do not need a fresh cork
   useEffect(() => {
     if (!game || !match) return;
-    const _isEvenGame = game.GameNumber % 2 === 0;
     const _hasTurns = turns.length > 0 || cricketTurns.length > 0;
-    if (!_isEvenGame || corkDone || _hasTurns || game.Status === 'Completed' || players.length < 2) return;
-    if (allGames.length < game.GameNumber) return;
+    if (corkDone || _hasTurns || game.Status === 'Completed' || players.length < 2) return;
 
-    // Get previous game's cork order
+    if (isLeagueTeamMatch) {
+      if (game.GameNumber === 1 || gameTypeChangedFromPrevious) return;
+      const autoOrder = getLeagueAutoOrder();
+      if (!autoOrder) return;
+      setOrderedPlayers(autoOrder);
+      setCorkDone(true);
+      localStorage.setItem(CORK_KEY(game.GameID), JSON.stringify(autoOrder.map(player => player.PlayerID)));
+      return;
+    }
+
+    const _isEvenGame = game.GameNumber % 2 === 0;
+    if (!_isEvenGame || allGames.length < game.GameNumber) return;
+
     const prevGame = allGames.find(g => g.GameNumber === game.GameNumber - 1);
     if (!prevGame) return;
-    const prevCorkKey = CORK_KEY(prevGame.GameID);
-    const prevStored = localStorage.getItem(prevCorkKey);
-    
+    const prevStored = localStorage.getItem(CORK_KEY(prevGame.GameID));
+
     if (prevStored) {
       try {
         const prevIds: number[] = JSON.parse(prevStored);
         const prevFirstPlayer = players.find(p => p.PlayerID === prevIds[0]);
         if (!prevFirstPlayer) return;
-        
+
         const corkWinnerTeamId = prevFirstPlayer.TeamSeasonID;
-        const losingTeamId = corkWinnerTeamId === match.HomeTeamSeasonID 
+        const losingTeamId = corkWinnerTeamId === match.HomeTeamSeasonID
           ? match.AwayTeamSeasonID : match.HomeTeamSeasonID;
-        
+
         const losingPlayers = players
           .filter(p => p.TeamSeasonID === losingTeamId)
           .sort((a, b) => b.PlayerOrder - a.PlayerOrder);
         const winningPlayers = players
           .filter(p => p.TeamSeasonID === corkWinnerTeamId)
           .sort((a, b) => b.PlayerOrder - a.PlayerOrder);
-        
+
         const evenOrder: GamePlayer[] = [];
         const max = Math.max(losingPlayers.length, winningPlayers.length);
         for (let i = 0; i < max; i++) {
           if (losingPlayers[i]) evenOrder.push(losingPlayers[i]);
           if (winningPlayers[i]) evenOrder.push(winningPlayers[i]);
         }
-        
+
         setOrderedPlayers(evenOrder);
         setCorkDone(true);
         localStorage.setItem(CORK_KEY(game.GameID), JSON.stringify(evenOrder.map(p => p.PlayerID)));
       } catch { /* ignore */ }
     }
-  }, [game, match, corkDone, turns.length, cricketTurns.length, players, allGames]);
+  }, [game, match, corkDone, turns.length, cricketTurns.length, players, allGames, isLeagueTeamMatch, baseMatchOrder, gameTypeChangedFromPrevious]);
 
   if (loading) return <p>Loading game...</p>;
   if (!game || !match) return <p>Game not found</p>;
 
-  // Determine if cork is needed (odd games: 1, 3, 5) and hasn't been done yet
-  const isOddGame = game.GameNumber % 2 === 1;
   const hasTurns = turns.length > 0 || cricketTurns.length > 0;
-  const needsCork = isOddGame && !corkDone && !hasTurns && game.Status !== 'Completed' && players.length > 1;
+  const needsCork = isLeagueTeamMatch
+    ? !corkDone && !hasTurns && game.Status !== 'Completed' && players.length > 1
+      && (game.GameNumber === 1 || gameTypeChangedFromPrevious)
+    : (game.GameNumber % 2 === 1 && !corkDone && !hasTurns && game.Status !== 'Completed' && players.length > 1);
+  const corkMode = !isLeagueTeamMatch || game.GameNumber === 1 || !baseMatchOrder
+    ? 'initial'
+    : game.GameNumber === 3
+      ? 'g3'
+      : 'g5';
 
   // Use ordered players if cork was done, otherwise default
   const effectivePlayers = orderedPlayers || players;
@@ -339,6 +434,49 @@ export function GamePage() {
     return { label: 'Team Score', value: String(totalScore) };
   };
 
+  // Compute close-out % for a set of player IDs (X01 only)
+  // CO% = game-outs / turns where remaining-before-turn ≤ 40 and even
+  // Can this remaining score be checked out with a single double?
+  const isDoubleOut = (rem: number): boolean =>
+    rem === 50 || (rem > 0 && rem <= 40 && rem % 2 === 0);
+
+  const computeCloseoutPct = (playerIds: number[]): string | null => {
+    if (game.GameType !== 'X01') return null;
+    const pt = turns.filter(t => playerIds.includes(t.PlayerID));
+    let attempts = 0;
+    let hits = 0;
+    for (const t of pt) {
+      // Parse dart-level details to count per-dart CO opportunities
+      let details: any = null;
+      try { details = t.Details ? JSON.parse(t.Details) : null; } catch { /* ignore */ }
+      if (details?.darts && Array.isArray(details.darts)) {
+        // Walk through darts, tracking remaining before each dart
+        let rem = (t.RemainingScore ?? 0) + t.Score; // remaining before the turn
+        for (const d of details.darts) {
+          if (isDoubleOut(rem)) {
+            attempts++;
+            // Check if this dart closed it out (remaining after = 0 and it's a double)
+            const dartScore = d.score || 0;
+            if (rem - dartScore === 0 && d.multiplier === 2) {
+              hits++;
+            }
+          }
+          rem -= (d.score || 0);
+        }
+      } else {
+        // Fallback: turn-level check (for turn-total mode entries)
+        const remainingBefore = (t.RemainingScore ?? 0) + t.Score;
+        if (isDoubleOut(remainingBefore)) {
+          attempts++;
+          if (t.IsGameOut) hits++;
+        }
+      }
+    }
+    if (attempts === 0) return null;
+    const pct = Math.round((hits / attempts) * 1000) / 10;
+    return `${hits}/${attempts} - ${pct}%`;
+  };
+
   const winnerTeamId = game.WinnerTeamSeasonID;
   const winnerTeamName = winnerTeamId === match.HomeTeamSeasonID ? match.HomeTeamName : match.AwayTeamName;
   const winnerColor = winnerTeamId === match.HomeTeamSeasonID ? 'var(--color-primary)' : 'var(--color-secondary)';
@@ -365,30 +503,113 @@ export function GamePage() {
       </Modal>
 
       {/* ===== Game Complete Overlay ===== */}
-      {game.Status === 'Completed' && showEndOverlay && (
+      {game.Status === 'Completed' && showEndOverlay && (() => {
+        // Determine if match is clinched (for button logic)
+        const hwNow = allGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.HomeTeamSeasonID).length;
+        const awNow = allGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.AwayTeamSeasonID).length;
+        const clinched = hwNow >= 3 || awNow >= 3;
+        const isChampionMoment = clinched && match.IsPlayoff && match.PlayoffRound === 'Final';
+        const matchWinnerName = hwNow >= awNow ? match.HomeTeamName : match.AwayTeamName;
+
+        return (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 9999,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: 'var(--spacing-md)',
+          overflow: 'hidden',
         }}>
+          {/* Confetti particles for champion moment */}
+          {isChampionMoment && (
+            <>
+              <style>{`
+                @keyframes confetti-fall {
+                  0% { transform: translateY(-100vh) rotate(0deg); opacity: 1; }
+                  100% { transform: translateY(100vh) rotate(720deg); opacity: 0; }
+                }
+                @keyframes trophy-bounce {
+                  0%, 100% { transform: scale(1); }
+                  50% { transform: scale(1.2); }
+                }
+                @keyframes champion-glow {
+                  0%, 100% { text-shadow: 0 0 10px rgba(255,215,0,0.5), 0 0 20px rgba(255,215,0,0.3); }
+                  50% { text-shadow: 0 0 20px rgba(255,215,0,0.8), 0 0 40px rgba(255,215,0,0.5), 0 0 60px rgba(255,215,0,0.3); }
+                }
+                @keyframes slide-up {
+                  0% { transform: translateY(40px); opacity: 0; }
+                  100% { transform: translateY(0); opacity: 1; }
+                }
+              `}</style>
+              {Array.from({ length: 40 }).map((_, i) => (
+                <div key={i} style={{
+                  position: 'absolute',
+                  top: -20,
+                  left: (i * 2.5) + '%',
+                  width: 10 + (i % 3) * 4,
+                  height: 10 + (i % 3) * 4,
+                  backgroundColor: ['#FFD700', '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FF8C00'][i % 8],
+                  borderRadius: i % 2 === 0 ? '50%' : '2px',
+                  animation: 'confetti-fall ' + (2 + (i % 3)) + 's linear ' + (i * 0.08) + 's infinite',
+                  zIndex: 10000,
+                }} />
+              ))}
+            </>
+          )}
+
           <div style={{
             maxWidth: 500, width: '100%',
             backgroundColor: 'var(--color-surface)',
             borderRadius: 'var(--radius-lg)',
             overflow: 'hidden',
-            boxShadow: 'var(--shadow-lg)',
+            boxShadow: isChampionMoment
+              ? '0 0 30px rgba(255,215,0,0.4), 0 0 60px rgba(255,215,0,0.2), var(--shadow-lg)'
+              : 'var(--shadow-lg)',
+            zIndex: 10001,
+            animation: isChampionMoment ? 'slide-up 0.6s ease-out' : undefined,
           }}>
-            {/* Winner header */}
-            <div style={{
-              padding: 'var(--spacing-lg)',
-              backgroundColor: winnerColor,
-              color: '#fff',
-              textAlign: 'center',
-            }}>
-              <div style={{ fontSize: '1rem', opacity: 0.8 }}>🏆 Winner</div>
-              <div style={{ fontSize: '1.8rem', fontWeight: 900 }}>{winnerTeamName}</div>
-            </div>
+            {/* Champion banner or normal winner header */}
+            {isChampionMoment ? (
+              <div style={{
+                padding: 'var(--spacing-lg) var(--spacing-md)',
+                background: 'linear-gradient(135deg, #FFD700, #FFA500, #FFD700)',
+                color: '#1a1a1a',
+                textAlign: 'center',
+              }}>
+                <div style={{
+                  fontSize: '3rem',
+                  animation: 'trophy-bounce 1s ease-in-out infinite',
+                }}>🏆</div>
+                <div style={{
+                  fontSize: '0.9rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  letterSpacing: 3,
+                  marginTop: 4,
+                  opacity: 0.8,
+                }}>League Champions</div>
+                <div style={{
+                  fontSize: '2rem',
+                  fontWeight: 900,
+                  marginTop: 4,
+                  animation: 'champion-glow 2s ease-in-out infinite',
+                  color: '#1a1a1a',
+                }}>{matchWinnerName}</div>
+                <div style={{
+                  fontSize: '1.5rem',
+                  marginTop: 8,
+                }}>🎉🎯🎉</div>
+              </div>
+            ) : (
+              <div style={{
+                padding: 'var(--spacing-lg)',
+                backgroundColor: winnerColor,
+                color: '#fff',
+                textAlign: 'center',
+              }}>
+                <div style={{ fontSize: '1rem', opacity: 0.8 }}>🏆 Winner</div>
+                <div style={{ fontSize: '1.8rem', fontWeight: 900 }}>{winnerTeamName}</div>
+              </div>
+            )}
 
             {/* Stats */}
             <div style={{ padding: 'var(--spacing-md)' }}>
@@ -399,22 +620,32 @@ export function GamePage() {
                 </div>
                 {homeTeamPlayers.map(p => {
                   const s = computePlayerStat(p.PlayerID);
+                  const co = computeCloseoutPct([p.PlayerID]);
                   return (
                     <div key={p.PlayerID} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--color-border)', fontSize: '0.9rem' }}>
                       <span>{p.FirstName} {p.LastName}</span>
                       <span style={{ fontWeight: 700 }}>
-                        {s.label}: {s.value}
+                        {s.label}: {s.value}{co ? ` | CO: ${co}` : ''}
                       </span>
                     </div>
                   );
                 })}
                 {homeTeamPlayers.length > 1 && (() => {
                   const ts = computeTeamStat(homeTeamPlayers.map(p => p.PlayerID));
+                  const co = computeCloseoutPct(homeTeamPlayers.map(p => p.PlayerID));
                   return (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '0.9rem', fontWeight: 700, borderTop: '2px solid var(--color-border)', marginTop: 2 }}>
-                      <span>Team</span>
-                      <span>{ts.label}: {ts.value}</span>
-                    </div>
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '0.9rem', fontWeight: 700, borderTop: '2px solid var(--color-border)', marginTop: 2 }}>
+                        <span>Team</span>
+                        <span>{ts.label}: {ts.value}</span>
+                      </div>
+                      {co && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.85rem', color: 'var(--color-text-light)' }}>
+                          <span>Close Out %</span>
+                          <span style={{ fontWeight: 700 }}>{co}</span>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
               </div>
@@ -426,22 +657,32 @@ export function GamePage() {
                 </div>
                 {awayTeamPlayers.map(p => {
                   const s = computePlayerStat(p.PlayerID);
+                  const co = computeCloseoutPct([p.PlayerID]);
                   return (
                     <div key={p.PlayerID} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--color-border)', fontSize: '0.9rem' }}>
                       <span>{p.FirstName} {p.LastName}</span>
                       <span style={{ fontWeight: 700 }}>
-                        {s.label}: {s.value}
+                        {s.label}: {s.value}{co ? ` | CO: ${co}` : ''}
                       </span>
                     </div>
                   );
                 })}
                 {awayTeamPlayers.length > 1 && (() => {
                   const ts = computeTeamStat(awayTeamPlayers.map(p => p.PlayerID));
+                  const co = computeCloseoutPct(awayTeamPlayers.map(p => p.PlayerID));
                   return (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '0.9rem', fontWeight: 700, borderTop: '2px solid var(--color-border)', marginTop: 2 }}>
-                      <span>Team</span>
-                      <span>{ts.label}: {ts.value}</span>
-                    </div>
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', fontSize: '0.9rem', fontWeight: 700, borderTop: '2px solid var(--color-border)', marginTop: 2 }}>
+                        <span>Team</span>
+                        <span>{ts.label}: {ts.value}</span>
+                      </div>
+                      {co && (
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '2px 0', fontSize: '0.85rem', color: 'var(--color-text-light)' }}>
+                          <span>Close Out %</span>
+                          <span style={{ fontWeight: 700 }}>{co}</span>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
               </div>
@@ -452,8 +693,14 @@ export function GamePage() {
                   <>
                     <Button onClick={handleRematch} fullWidth>🔄 Rematch</Button>
                     <Button variant="ghost" onClick={() => navigate('/play')} fullWidth>New Game</Button>
+                    <Button variant="ghost" onClick={() => navigate('/')} fullWidth size="sm">🏠 Home</Button>
                   </>
-                ) : allGames.length < MATCH_GAME_COUNT ? (() => {
+                ) : (() => {
+                  if (clinched || allGames.length >= MATCH_GAME_COUNT) {
+                    return <Button onClick={() => navigate(`/league/${match.SeasonID}`)} fullWidth>
+                      {isChampionMoment ? '🏆 Back to League' : 'Back to League'}
+                    </Button>;
+                  }
                   const nextNum = allGames.length + 1;
                   const fmt = gameFormats.find(f => f.GameNumber === nextNum);
                   if (fmt) {
@@ -462,10 +709,8 @@ export function GamePage() {
                       : fmt.GameType;
                     return <Button onClick={goToNextGame} fullWidth>▶ Next: Game {nextNum} — {lbl}</Button>;
                   }
-                  return <Button onClick={() => navigate(`/match/${game.MatchID}`)} fullWidth>Back to Match</Button>;
-                })() : (
-                  <Button onClick={() => navigate(`/match/${game.MatchID}`)} fullWidth>Back to Match</Button>
-                )}
+                  return <Button onClick={() => navigate(`/league/${match.SeasonID}`)} fullWidth>Back to League</Button>;
+                })()}
                 <Button variant="ghost" onClick={() => setShowEndOverlay(false)} fullWidth size="sm">
                   View Scoreboard
                 </Button>
@@ -473,7 +718,8 @@ export function GamePage() {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {error && <p style={{ color: 'var(--color-danger)', marginBottom: 'var(--spacing-md)' }}>{error}</p>}
 
@@ -483,6 +729,8 @@ export function GamePage() {
           gameNumber={game.GameNumber}
           match={match}
           players={players}
+          mode={corkMode}
+          baseOrder={baseMatchOrder || undefined}
           onCorkComplete={handleCorkComplete}
         />
       )}
@@ -506,7 +754,13 @@ export function GamePage() {
         <CricketScoreboard {...baseProps} cricketTurns={cricketTurns} onAddCricketTurn={addCricketTurn} onUndoCricketTurn={undoCricketTurn} />
       )}
       {game.GameType === 'Shanghai' && (
-        <ShanghaiScoreboard {...baseProps} turns={turns} onAddTurn={addTurn} onUndoTurn={undoTurn} />
+        <ShanghaiScoreboard
+          {...baseProps}
+          turns={turns}
+          onAddTurn={addTurn}
+          onUndoTurn={undoTurn}
+          onMovePlayer={movePlayerOrder}
+        />
       )}
       {game.GameType === 'RoundTheWorld' && (
         <RoundTheWorldScoreboard {...baseProps} turns={turns} onAddTurn={addTurn} onUndoTurn={undoTurn} />

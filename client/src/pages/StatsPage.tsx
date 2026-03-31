@@ -16,6 +16,10 @@ interface GameLogEntry {
   WinnerTeamSeasonID: number | null;
   MatchID: number;
   RoundNumber: number;
+  MatchDate: string | null;
+  IsPlayoff: boolean;
+  PlayoffRound: string | null;
+  SeasonName: string;
   TeamSeasonID: number;
   PPD: number | null;
   MPR: number | null;
@@ -49,8 +53,8 @@ export function StatsPage() {
   const [hallOfFame, setHallOfFame] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'gamelog' | 'leaderboard' | 'history' | 'halloffame'>(playerId ? 'overview' : 'leaderboard');
-  const [sortCol, setSortCol] = useState<string>('Rank');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [sortCol, setSortCol] = useState<string>('DR');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
   const [teamSortCol, setTeamSortCol] = useState<string>('PPR');
   const [teamSortDir, setTeamSortDir] = useState<'asc' | 'desc'>('desc');
 
@@ -59,11 +63,11 @@ export function StatsPage() {
       .then(([p, s]) => {
         setPlayers(p);
         setSeasons(s);
-        // Default to most recent season (last in list)
+        // Default to most recent season that has games played (not Setup, not Ad-Hoc)
         if (s.length > 0 && !selectedSeasonId) {
-          // Filter out Ad-Hoc Play season, pick most recent real season; fallback to last
-          const realSeasons = s.filter(season => season.SeasonName !== 'Ad-Hoc Play');
-          const defaultSeason = realSeasons.length > 0 ? realSeasons[realSeasons.length - 1] : s[s.length - 1];
+          const playedSeasons = s.filter(season => season.SeasonName !== 'Ad-Hoc Play' && season.Status !== 'Setup');
+          const defaultSeason = playedSeasons.length > 0 ? playedSeasons[0]
+            : s.filter(season => season.SeasonName !== 'Ad-Hoc Play')[0] || s[0];
           setSelectedSeasonId(String(defaultSeason.SeasonID));
         }
       });
@@ -150,53 +154,88 @@ export function StatsPage() {
     label: s.SeasonName,
   }));
 
-  // --- Dense ranking helper (no gaps after ties) ---
-  function denseRank(arr: { value: number; idx: number }[]): number[] {
-    const sorted = [...arr].sort((a, b) => b.value - a.value); // desc by value (higher = better)
-    const ranks = new Array(arr.length).fill(0);
-    let rank = 1;
-    for (let i = 0; i < sorted.length; i++) {
-      if (i > 0 && sorted[i].value < sorted[i - 1].value) rank++;
-      ranks[sorted[i].idx] = rank;
-    }
-    return ranks;
-  }
-
-  // --- Compute player leaderboard with weighted ranking ---
-  // Normalize by weeks played: weeks = GP / 5
-  // Opportunities per week: Outs = 3, Ins = 1, Closes = 2
-  // Rank by: Out% = Outs/(weeks*3), In% = Ins/(weeks*1), Close% = Closes/(weeks*2), AS/Week = AS/weeks
-  // Out/In ranks get tiebreaker: rank + (100 - avgScore) / 100
-  // WeightedRank = (ASRank*2 + OutRank*2 + InRank*1 + CloseRank*1) / 6
+  // --- Compute player leaderboard with Darts Rating ---
+  // DR is a multi-dimensional composite (0–100 scale) using season-relative normalization:
+  //   Scoring Power (35%): First 9 average — normalized to season best
+  //   Finishing (30%):     Blend of checkout PPR (≤170) + checkout % — normalized to season best
+  //   Versatility (20%):   Cricket MPR — normalized to season best
+  //   Clutch (15%):        Weighted clutch events per game — normalized to season best
+  // Each dimension scores the player as a fraction of the season leader in that category.
+  // Rank is the dense rank by PPR descending (the traditional ranking).
   const rankedLeaderboard = useMemo(() => {
     if (leaderboard.length === 0) return [];
-    const withRates = leaderboard.map((p: any) => {
-      const weeks = (p.GamesPlayed || 0) / 5;
+
+    // First pass: compute raw component values for each player
+    const rawData = leaderboard.map((p: any) => {
+      const ppr = Math.round(Number(p.PPD) * 3 * 10) / 10;
+      const gp = p.GamesPlayed || 1;
+      const first9 = Math.round(Number(p.First9Avg || 0) * 10) / 10;
+      const scoringPPR = Math.round(Number(p.ScoringPPR || 0) * 10) / 10;
+      const checkoutPPR = Math.round(Number(p.CheckoutPPR || 0) * 10) / 10;
+      const coHits = Number(p.CheckoutHits || 0);
+      const coAttempts = Number(p.CheckoutAttempts || 0);
+      const coPct = coAttempts > 0 ? Math.round((coHits / coAttempts) * 1000) / 10 : 0;
+      const gamesWon = Number(p.GamesWon || 0);
+      const winPct = gp > 0 ? Math.round((gamesWon / gp) * 1000) / 10 : 0;
+
+      // Raw component scores (not yet normalized)
+      const rawScoring   = first9;
+      const hasCheckoutData = coAttempts > 0;
+      const rawFinishing = hasCheckoutData
+        ? (checkoutPPR * 0.5) + ((coPct / 100) * 90 * 0.5) // blend: PPR + %×90 (same scale)
+        : null; // null = no checkout data, will be filled with season median
+      const rawMPR       = Number(p.MPR || 0);
+      const clutchEvents = (p.OutCount || 0) * 2 + (p.InCount || 0) * 1.5
+                         + (p.CloseCount || 0) * 1.5 + (p.AllStarCount || 0);
+      const rawClutch    = clutchEvents / gp;
+
       return {
-        outPct: weeks > 0 ? (p.OutCount || 0) / (weeks * 3) : 0,
-        inPct: weeks > 0 ? (p.InCount || 0) / (weeks * 1) : 0,
-        closePct: weeks > 0 ? (p.CloseCount || 0) / (weeks * 2) : 0,
-        asRate: weeks > 0 ? (p.AllStarCount || 0) / weeks : 0,
-        outAvg: Number(p.OutAvg) || 0,
-        inAvg: Number(p.InAvg) || 0,
+        ...p, PPR: ppr, First9: first9, ScoringPPR: scoringPPR, CheckoutPPR: checkoutPPR,
+        CheckoutPct: coPct, GamesWon: gamesWon, WinPct: winPct,
+        _rawScoring: rawScoring, _rawFinishing: rawFinishing, _rawMPR: rawMPR, _rawClutch: rawClutch,
       };
     });
-    const asRanks = denseRank(withRates.map((r, i) => ({ value: r.asRate, idx: i })));
-    const outRanksRaw = denseRank(withRates.map((r, i) => ({ value: r.outPct, idx: i })));
-    const inRanksRaw = denseRank(withRates.map((r, i) => ({ value: r.inPct, idx: i })));
-    const closeRanks = denseRank(withRates.map((r, i) => ({ value: r.closePct, idx: i })));
-    // Add tiebreaker for Out and In ranks: rank + (100 - avgScore) / 100
-    const outRanks = outRanksRaw.map((r, i) => Math.round((r + (100 - withRates[i].outAvg) / 100) * 100) / 100);
-    const inRanks = inRanksRaw.map((r, i) => Math.round((r + (100 - withRates[i].inAvg) / 100) * 100) / 100);
-    return leaderboard.map((p: any, i: number) => ({
-      ...p,
-      PPR: Math.round(Number(p.PPD) * 3 * 10) / 10,
-      ASRank: asRanks[i],
-      OutRank: outRanks[i],
-      InRank: inRanks[i],
-      CloseRank: closeRanks[i],
-      WeightedRank: Math.round(((asRanks[i] * 2 + outRanks[i] * 2 + inRanks[i] * 1 + closeRanks[i] * 1) / 6) * 100) / 100,
-    }));
+
+    // Second pass: compute median finishing for players with no checkout data
+    const finishingValues = rawData
+      .map(p => p._rawFinishing)
+      .filter((v): v is number => v !== null)
+      .sort((a, b) => a - b);
+    const medianFinishing = finishingValues.length > 0
+      ? finishingValues[Math.floor(finishingValues.length / 2)]
+      : 0;
+
+    // Fill null finishing with median
+    rawData.forEach(p => {
+      if (p._rawFinishing === null) p._rawFinishing = medianFinishing;
+    });
+
+    // Third pass: find season maxima for normalization
+    const maxScoring   = Math.max(...rawData.map(p => p._rawScoring), 1);
+    const maxFinishing = Math.max(...rawData.map(p => p._rawFinishing), 1);
+    const maxMPR       = Math.max(...rawData.map(p => p._rawMPR), 0.01);
+    const maxClutch    = Math.max(...rawData.map(p => p._rawClutch), 0.01);
+
+    // Fourth pass: normalize and compute DR
+    const withDR = rawData.map(p => {
+      const scoring     = (p._rawScoring / maxScoring) * 35;
+      const finishing   = (p._rawFinishing / maxFinishing) * 30;
+      const versatility = (p._rawMPR / maxMPR) * 20;
+      const clutch      = (p._rawClutch / maxClutch) * 15;
+
+      const dartsRating = Math.round((scoring + finishing + versatility + clutch) * 10) / 10;
+      return { ...p, DartsRating: dartsRating };
+    });
+
+    // Dense rank by PPR descending
+    const sorted = [...withDR].sort((a, b) => b.PPR - a.PPR);
+    let rank = 1;
+    sorted.forEach((p, i) => {
+      if (i > 0 && p.PPR < sorted[i - 1].PPR) rank = i + 1;
+      p.Rank = rank;
+    });
+
+    return withDR;
   }, [leaderboard]);
 
   // --- Sortable leaderboard ---
@@ -209,13 +248,19 @@ export function StatsPage() {
         case 'Player': va = `${a.FirstName} ${a.LastName}`; vb = `${b.FirstName} ${b.LastName}`; return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
         case 'GP': va = a.GamesPlayed; vb = b.GamesPlayed; break;
         case 'PPR': va = a.PPR; vb = b.PPR; break;
+        case 'F9': va = a.First9; vb = b.First9; break;
+        case '>170': va = a.ScoringPPR; vb = b.ScoringPPR; break;
+        case '≤170': va = a.CheckoutPPR; vb = b.CheckoutPPR; break;
         case 'MPR': va = Number(a.MPR); vb = Number(b.MPR); break;
         case 'AS': va = a.AllStarCount || 0; vb = b.AllStarCount || 0; break;
         case 'IN': va = a.InCount || 0; vb = b.InCount || 0; break;
         case 'OUT': va = a.OutCount || 0; vb = b.OutCount || 0; break;
         case 'CL': va = a.CloseCount || 0; vb = b.CloseCount || 0; break;
-        case 'Rank': va = a.WeightedRank; vb = b.WeightedRank; break;
-        default: va = a.PPR; vb = b.PPR; break;
+        case 'CO%': va = a.CheckoutPct; vb = b.CheckoutPct; break;
+        case 'W': va = a.GamesWon; vb = b.GamesWon; break;
+        case 'Rank': va = a.Rank; vb = b.Rank; break;
+        case 'DR': va = a.DartsRating; vb = b.DartsRating; break;
+        default: va = a.DartsRating; vb = b.DartsRating; break;
       }
       return sortDir === 'asc' ? va - vb : vb - va;
     });
@@ -233,9 +278,10 @@ export function StatsPage() {
         case 'PPR': va = Number(a.PPD) * 3; vb = Number(b.PPD) * 3; break;
         case 'MPR': va = Number(a.MPR); vb = Number(b.MPR); break;
         case 'AS': va = a.AllStarCount || 0; vb = b.AllStarCount || 0; break;
-        case 'IN': va = a.InCount || 0; vb = b.InCount || 0; break;
-        case 'OUT': va = a.OutCount || 0; vb = b.OutCount || 0; break;
-        case 'CL': va = a.CloseCount || 0; vb = b.CloseCount || 0; break;
+        case 'GW': va = (a.Wins501 || 0) + (a.Wins301 || 0) + (a.WinsCricket || 0); vb = (b.Wins501 || 0) + (b.Wins301 || 0) + (b.WinsCricket || 0); break;
+        case 'W501': va = a.Wins501 || 0; vb = b.Wins501 || 0; break;
+        case 'W301': va = a.Wins301 || 0; vb = b.Wins301 || 0; break;
+        case 'WCrk': va = a.WinsCricket || 0; vb = b.WinsCricket || 0; break;
         default: va = Number(a.PPD) * 3; vb = Number(b.PPD) * 3; break;
       }
       return teamSortDir === 'asc' ? va - vb : vb - va;
@@ -247,8 +293,9 @@ export function StatsPage() {
     setSortCol(prev => {
       if (prev === col) { setSortDir(d => d === 'asc' ? 'desc' : 'asc'); return col; }
       // Default sort direction per column
-      const defaultDesc = ['GP', 'PPR', 'MPR', 'AS', 'IN', 'OUT', 'CL'];
-      setSortDir(defaultDesc.includes(col) ? 'desc' : 'asc');
+      const defaultDesc = ['GP', 'PPR', 'F9', '>170', '≤170', 'MPR', 'AS', 'IN', 'OUT', 'CL', 'CO%', 'W', 'DR'];
+      const defaultAsc = ['Rank'];
+      setSortDir(defaultAsc.includes(col) ? 'asc' : defaultDesc.includes(col) ? 'desc' : 'asc');
       return col;
     });
   }, []);
@@ -256,7 +303,7 @@ export function StatsPage() {
   const handleTeamSort = useCallback((col: string) => {
     setTeamSortCol(prev => {
       if (prev === col) { setTeamSortDir(d => d === 'asc' ? 'desc' : 'asc'); return col; }
-      const defaultDesc = ['GP', 'PPR', 'MPR', 'AS', 'IN', 'OUT', 'CL'];
+      const defaultDesc = ['GP', 'PPR', 'MPR', 'AS', 'GW', 'W501', 'W301', 'WCrk'];
       setTeamSortDir(defaultDesc.includes(col) ? 'desc' : 'asc');
       return col;
     });
@@ -342,6 +389,8 @@ export function StatsPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                 <thead>
                   <tr style={{ borderBottom: '2px solid var(--color-border)', textAlign: 'left' }}>
+                    <th style={{ padding: '6px 8px' }}>Season</th>
+                    <th style={{ padding: '6px 8px' }}>Date</th>
                     <th style={{ padding: '6px 8px' }}>Rd</th>
                     <th style={{ padding: '6px 8px' }}>G#</th>
                     <th style={{ padding: '6px 8px' }}>Type</th>
@@ -369,7 +418,11 @@ export function StatsPage() {
                         }}
                         onClick={() => navigate(`/game/${g.GameID}`)}
                       >
-                        <td style={{ padding: '6px 8px' }}>{g.RoundNumber}</td>
+                        <td style={{ padding: '6px 8px', fontSize: '0.8rem' }}>{g.SeasonName}</td>
+                        <td style={{ padding: '6px 8px', fontSize: '0.8rem' }}>
+                          {g.MatchDate ? new Date(g.MatchDate).toLocaleDateString() : '—'}
+                        </td>
+                        <td style={{ padding: '6px 8px' }}>{g.IsPlayoff ? (g.PlayoffRound || 'PO') : g.RoundNumber}</td>
                         <td style={{ padding: '6px 8px' }}>{g.GameNumber}</td>
                         <td style={{ padding: '6px 8px' }}>
                           {g.GameType === 'X01' ? `${g.X01Target || ''}` : g.GameType}
@@ -481,12 +534,18 @@ export function StatsPage() {
                       <SortTh col="Player" label="Player" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                       <SortTh col="GP" label="GP" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                       <SortTh col="PPR" label="PPR" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                      <SortTh col="F9" label="F9" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                      <SortTh col=">170" label=">170" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                      <SortTh col="≤170" label="≤170" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                       <SortTh col="MPR" label="MPR" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                       <SortTh col="AS" label="⭐" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                       <SortTh col="IN" label="IN" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                       <SortTh col="OUT" label="OUT" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                       <SortTh col="CL" label="CL" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                      <SortTh col="CO%" label="CO%" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                      <SortTh col="W" label="W" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                       <SortTh col="Rank" label="Rank" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
+                      <SortTh col="DR" label="DR" activeCol={sortCol} dir={sortDir} onClick={handleSort} />
                     </tr>
                   </thead>
                   <tbody>
@@ -506,6 +565,15 @@ export function StatsPage() {
                         <td style={{ padding: '8px', fontWeight: 700, color: 'var(--color-primary)' }}>
                           {p.PPR.toFixed(1)}
                         </td>
+                        <td style={{ padding: '8px', fontWeight: 600, color: 'var(--color-primary)', opacity: 0.8 }}>
+                          {p.First9 > 0 ? p.First9.toFixed(1) : '—'}
+                        </td>
+                        <td style={{ padding: '8px', fontSize: '0.85rem' }}>
+                          {p.ScoringPPR > 0 ? p.ScoringPPR.toFixed(1) : '—'}
+                        </td>
+                        <td style={{ padding: '8px', fontSize: '0.85rem' }}>
+                          {p.CheckoutPPR > 0 ? p.CheckoutPPR.toFixed(1) : '—'}
+                        </td>
                         <td style={{ padding: '8px', fontWeight: 700, color: 'var(--color-secondary)' }}>
                           {Number(p.MPR).toFixed(2)}
                         </td>
@@ -513,7 +581,12 @@ export function StatsPage() {
                         <td style={{ padding: '8px' }}>{p.InCount}</td>
                         <td style={{ padding: '8px' }}>{p.OutCount}</td>
                         <td style={{ padding: '8px' }}>{p.CloseCount}</td>
-                        <td style={{ padding: '8px', fontWeight: 700, color: 'var(--color-primary)' }}>{p.WeightedRank.toFixed(2)}</td>
+                        <td style={{ padding: '8px', fontWeight: 600, color: p.CheckoutPct >= 30 ? 'var(--color-success, #4caf50)' : p.CheckoutPct > 0 ? 'var(--color-text)' : 'var(--color-text-light)' }}>
+                          {p.CheckoutPct > 0 ? `${p.CheckoutPct.toFixed(1)}%` : '—'}
+                        </td>
+                        <td style={{ padding: '8px', fontWeight: 600 }}>{p.GamesWon}</td>
+                        <td style={{ padding: '8px', color: 'var(--color-text-light)' }}>{p.Rank}</td>
+                        <td style={{ padding: '8px', fontWeight: 700, color: 'var(--color-primary)' }}>{p.DartsRating.toFixed(1)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -535,9 +608,10 @@ export function StatsPage() {
                       <SortTh col="PPR" label="PPR" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
                       <SortTh col="MPR" label="MPR" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
                       <SortTh col="AS" label="⭐" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
-                      <SortTh col="IN" label="IN" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
-                      <SortTh col="OUT" label="OUT" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
-                      <SortTh col="CL" label="CL" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
+                      <SortTh col="GW" label="GW" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
+                      <SortTh col="W501" label="W501" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
+                      <SortTh col="W301" label="W301" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
+                      <SortTh col="WCrk" label="WCrk" activeCol={teamSortCol} dir={teamSortDir} onClick={handleTeamSort} />
                     </tr>
                   </thead>
                   <tbody>
@@ -553,9 +627,10 @@ export function StatsPage() {
                           {Number(t.MPR).toFixed(2)}
                         </td>
                         <td style={{ padding: '8px', color: '#FFD700', fontWeight: 700 }}>{t.AllStarCount || 0}</td>
-                        <td style={{ padding: '8px' }}>{t.InCount}</td>
-                        <td style={{ padding: '8px' }}>{t.OutCount}</td>
-                        <td style={{ padding: '8px' }}>{t.CloseCount}</td>
+                        <td style={{ padding: '8px', fontWeight: 600 }}>{(t.Wins501 || 0) + (t.Wins301 || 0) + (t.WinsCricket || 0)}</td>
+                        <td style={{ padding: '8px', fontWeight: 600 }}>{t.Wins501 || 0}</td>
+                        <td style={{ padding: '8px', fontWeight: 600 }}>{t.Wins301 || 0}</td>
+                        <td style={{ padding: '8px', fontWeight: 600 }}>{t.WinsCricket || 0}</td>
                       </tr>
                     ))}
                   </tbody>

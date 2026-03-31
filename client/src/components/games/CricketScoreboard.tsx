@@ -35,8 +35,34 @@ const SEGMENT_KEYS: Record<string, keyof CricketState> = {
   '16': 'Seg16', '15': 'Seg15', 'Bull': 'SegBull',
 };
 const MAX_TAPS_PER_TURN = 9;
-const MAX_MARKS_PER_SEGMENT = 3;  // max marks on one segment per turn (one dart = up to triple)
+const MAX_MARKS_PER_SEGMENT: Record<string, number> = {
+  Bull: 6,
+  '20': 9,
+  '19': 9,
+  '18': 9,
+  '17': 9,
+  '16': 9,
+  '15': 9,
+};
 const MAX_SEGMENTS_PER_TURN = 3;  // only 3 darts, so at most 3 different segments
+
+function getSegmentDartCapacity(segment: string): number {
+  return segment === 'Bull' ? 2 : 3;
+}
+
+function isPossibleCricketMarkState(marks: Record<string, number>): boolean {
+  const activeSegments = Object.entries(marks).filter(([, value]) => value > 0);
+  if (activeSegments.length > MAX_SEGMENTS_PER_TURN) return false;
+
+  let minimumDartsNeeded = 0;
+  for (const [segment, value] of activeSegments) {
+    const cap = getSegmentDartCapacity(segment);
+    if (value > (MAX_MARKS_PER_SEGMENT[segment] || 9)) return false;
+    minimumDartsNeeded += Math.ceil(value / cap);
+  }
+
+  return minimumDartsNeeded <= 3;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Mark Display Helper                                                */
@@ -54,8 +80,15 @@ function renderMarks(count: number): React.ReactNode {
 /*  All-Star Detection                                                 */
 /* ------------------------------------------------------------------ */
 
-function getCricketAllStarLevel(totalMarks: number, bullMarks: number): AllStarLevel {
-  if (bullMarks >= 3) return 'allstar'; // 3 marks all bulls
+function getCricketAllStarLevel(turnMarks: Record<string, number>): AllStarLevel {
+  const totalMarks = Object.values(turnMarks).reduce((sum, value) => sum + value, 0);
+  const bullMarks = turnMarks.Bull || 0;
+  const activeSegments = Object.entries(turnMarks).filter(([, value]) => value > 0);
+  if (activeSegments.length === 1 && activeSegments[0][0] === 'Bull') {
+    if (bullMarks === 6) return 'triple';
+    if (bullMarks >= 3) return 'allstar';
+    return null;
+  }
   if (totalMarks >= 9) return 'triple';
   if (totalMarks >= 7) return 'double';
   if (totalMarks >= 5) return 'allstar';
@@ -194,16 +227,16 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
     const oppMarks = opponentState ? (opponentState[key] as number) : 0;
     const currentTaps = turnMarks[seg] || 0;
 
-    // If this segment hasn't been tapped yet, check if we've hit the 3-segment limit
-    if (currentTaps === 0 && segmentsUsed >= MAX_SEGMENTS_PER_TURN) return 0;
-
-    // Per-segment cap: 3 marks max (one dart can score at most a triple)
-    if (currentTaps >= MAX_MARKS_PER_SEGMENT) return 0;
-
-    if (oppMarks >= 3) {
-      return Math.max(0, Math.min(3 - myMarks - currentTaps, MAX_MARKS_PER_SEGMENT - currentTaps));
+    const segmentLimit = MAX_MARKS_PER_SEGMENT[seg] || 9;
+    let allowed = 0;
+    while (currentTaps + allowed < segmentLimit && totalTaps + allowed < MAX_TAPS_PER_TURN) {
+      const candidateValue = currentTaps + allowed + 1;
+      if (oppMarks >= 3 && candidateValue > Math.max(0, 3 - myMarks)) break;
+      const candidateMarks = { ...turnMarks, [seg]: candidateValue };
+      if (!isPossibleCricketMarkState(candidateMarks)) break;
+      allowed += 1;
     }
-    return Math.min(MAX_TAPS_PER_TURN - totalTaps, MAX_MARKS_PER_SEGMENT - currentTaps);
+    return allowed;
   }, [currentPlayer, cricketState, turnMarks, totalTaps, segmentsUsed]);
 
   /* --- Tap a segment --- */
@@ -262,7 +295,6 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
       // Map to CricketTurn column name
       if (seg === 'Bull') {
         segColumns['SegBull'] = added;
-        bullMarks = added;
       } else {
         segColumns[`Seg${seg}`] = added;
       }
@@ -282,7 +314,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
     }
 
     // All-Star check
-    const level = getCricketAllStarLevel(totalMarks, bullMarks);
+    const level = getCricketAllStarLevel(turnMarks);
     if (level) {
       setAllStarAnim({ level, playerName: `${currentPlayer.FirstName} ${currentPlayer.LastName}` });
       setTimeout(() => setAllStarAnim(null), 2500);
@@ -304,7 +336,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
       const key = SEGMENT_KEYS[seg];
       if (!key) continue;
       const baseMarks = teamState ? (teamState[key] as number) : 0;
-      (stateUpdate as any)[key] = Math.min(baseMarks + added, 9);
+      (stateUpdate as any)[key] = Math.min(baseMarks + added, MAX_MARKS_PER_SEGMENT[seg] || 9);
     }
     if (totalPoints > 0) {
       stateUpdate.Points = (teamState?.Points || 0) + totalPoints;
@@ -314,28 +346,13 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
       await gameService.updateCricketState(game.GameID, currentPlayer.TeamSeasonID, stateUpdate);
     }
 
-    // Record cricket turn
-    await onAddCricketTurn({
-      PlayerID: currentPlayer.PlayerID,
-      TeamSeasonID: currentPlayer.TeamSeasonID,
-      TurnNumber: cricketTurns.length + 1,
-      RoundNumber: currentRound,
-      DartsThrown: 3,
-      Points: totalPoints,
-      MarksScored: totalMarks,
-      ...segColumns,
-      Details: JSON.stringify({ taps: turnMarks, allStarLevel: level }),
-    } as Partial<CricketTurn>);
-
-    setTurnMarks({});
-
     // Check win condition
     const updatedTeamState = { ...teamState } as any;
     for (const seg of CRICKET_SEGMENTS) {
       const added = turnMarks[seg] || 0;
       if (added === 0) continue;
       const key = SEGMENT_KEYS[seg];
-      if (key) updatedTeamState[key] = Math.min((teamState?.[key] as number || 0) + added, 9);
+      if (key) updatedTeamState[key] = Math.min((teamState?.[key] as number || 0) + added, MAX_MARKS_PER_SEGMENT[seg] || 9);
     }
     updatedTeamState.Points = (teamState?.Points || 0) + totalPoints;
 
@@ -345,8 +362,24 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
     });
     const teamPoints = updatedTeamState.Points || 0;
     const oppPoints = opponentState?.Points || 0;
+    const isClose = allClosed && teamPoints >= oppPoints;
 
-    if (allClosed && teamPoints >= oppPoints) {
+    await onAddCricketTurn({
+      PlayerID: currentPlayer.PlayerID,
+      TeamSeasonID: currentPlayer.TeamSeasonID,
+      TurnNumber: cricketTurns.length + 1,
+      RoundNumber: currentRound,
+      DartsThrown: 3,
+      Points: totalPoints,
+      MarksScored: totalMarks,
+      IsCricketClose: isClose,
+      ...segColumns,
+      Details: JSON.stringify({ taps: turnMarks, allStarLevel: level, allStarCount: level ? 1 : 0, close: isClose }),
+    } as Partial<CricketTurn>);
+
+    setTurnMarks({});
+
+    if (isClose) {
       const teamName = currentPlayer.TeamSeasonID === homeTeamId ? (match.HomeTeamName || 'Home') : (match.AwayTeamName || 'Away');
       announceCricketGameOut(teamName);
       await onEndGame(currentPlayer.TeamSeasonID);
@@ -475,23 +508,26 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                       WebkitUserSelect: 'none',
                     }}
                   >
-                    <div>{seg}</div>
-                    {tapCount > 0 && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, marginTop: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                      {tapCount > 0 && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleUntap(seg); }}
                           style={{
-                            width: 28, height: 28, border: '1px solid var(--color-danger)',
+                            width: 24, height: 24, border: '1px solid var(--color-danger)',
                             borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-danger)',
-                            color: '#fff', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer',
+                            color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0,
                           }}
                         >
                           −
                         </button>
+                      )}
+                      <span>{seg}</span>
+                      {tapCount > 0 && (
                         <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', minWidth: 24, textAlign: 'center' }}>+{tapCount}</span>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </td>
 
                   {/* Away marks */}
@@ -580,7 +616,10 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                     <tr key={t.CricketTurnID} style={{ borderBottom: '1px solid var(--color-border)' }}>
                       <td style={{ padding: '6px' }}>{t.RoundNumber}</td>
                       <td style={{ padding: '6px' }}>{p ? `${p.FirstName} ${p.LastName[0]}.` : '?'}</td>
-                      <td style={{ padding: '6px', textAlign: 'right', fontWeight: 600 }}>{t.MarksScored || 0}</td>
+                      <td style={{ padding: '6px', textAlign: 'right', fontWeight: 600 }}>
+                        {t.MarksScored || 0}
+                        {t.IsCricketClose && <span style={{ marginLeft: 6, color: 'var(--color-success)', fontSize: '0.75rem' }}>CL</span>}
+                      </td>
                       <td style={{ padding: '6px', textAlign: 'right', fontWeight: 700 }}>
                         {t.Points > 0 ? `+${t.Points}` : '—'}
                       </td>

@@ -58,6 +58,24 @@ export function MatchPage() {
   const startMatch = async () => {
     if (!match) return;
     await matchService.updateStatus(match.MatchID, 'InProgress');
+
+    // Auto-create the first game from format config and navigate directly to it
+    const format = gameFormats.find(f => f.GameNumber === 1);
+    if (format) {
+      try {
+        const game = await gameService.create({
+          MatchID: match.MatchID,
+          GameType: format.GameType,
+          X01Target: format.GameType === 'X01' ? (format.X01Target || 501) : undefined,
+          DoubleInRequired: format.DoubleInRequired,
+          RtwMode: format.GameType === 'RoundTheWorld' ? '1to20' : undefined,
+        });
+        navigate(`/game/${game.GameID}`);
+        return;
+      } catch {
+        // Fall through to reload if game creation fails
+      }
+    }
     load();
   };
 
@@ -114,7 +132,8 @@ export function MatchPage() {
   // Calculate live match score (game wins per team)
   const homeGamesWon = games.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.HomeTeamSeasonID).length;
   const awayGamesWon = games.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.AwayTeamSeasonID).length;
-  const canAddGame = match.Status === 'InProgress' && games.length < MATCH_GAME_COUNT;
+  const matchClinched = homeGamesWon >= 3 || awayGamesWon >= 3;
+  const canAddGame = match.Status === 'InProgress' && games.length < MATCH_GAME_COUNT && !matchClinched;
 
   return (
     <div>
@@ -199,7 +218,7 @@ export function MatchPage() {
             </Button>
           );
         })()}
-        {match.Status === 'InProgress' && games.length >= MATCH_GAME_COUNT && (
+        {match.Status === 'InProgress' && !canAddGame && games.length > 0 && !matchClinched && (
           <div style={{ fontSize: '0.85rem', color: 'var(--color-text-light)', alignSelf: 'center' }}>
             All {MATCH_GAME_COUNT} games created. Complete all games to finalize the match.
           </div>

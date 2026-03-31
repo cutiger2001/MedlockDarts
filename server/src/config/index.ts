@@ -12,6 +12,9 @@ const config = {
     port: parseInt(process.env.SERVER_PORT || '3001', 10),
     nodeEnv: process.env.NODE_ENV || 'development',
   },
+  league: {
+    setupPassword: process.env.LEAGUE_SETUP_PASSWORD || '',
+  },
   db: {
     server: process.env.DB_SERVER || 'localhost',
     port: parseInt(process.env.DB_PORT || '1433', 10),

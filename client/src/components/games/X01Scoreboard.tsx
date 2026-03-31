@@ -39,6 +39,53 @@ type AllStarLevel = 'allstar' | 'double' | 'triple' | null;
 const SEGMENTS = [20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1] as const;
 const MAX_DARTS_PER_TURN = 3;
 
+const SINGLE_DART_SCORES = (() => {
+  const scores = new Set<number>([0, 25, 50]);
+  for (const segment of SEGMENTS) {
+    scores.add(segment);
+    scores.add(segment * 2);
+    scores.add(segment * 3);
+  }
+  return [...scores];
+})();
+
+const DOUBLE_DART_SCORES = (() => {
+  const scores = new Set<number>([50]);
+  for (const segment of SEGMENTS) {
+    scores.add(segment * 2);
+  }
+  return [...scores];
+})();
+
+function buildPossibleScoresWithAtLeastOneDouble(): Set<number> {
+  const possible = new Set<number>();
+  for (const first of SINGLE_DART_SCORES) {
+    for (const second of SINGLE_DART_SCORES) {
+      for (const third of DOUBLE_DART_SCORES) {
+        possible.add(first + second + third);
+      }
+    }
+  }
+  return possible;
+}
+
+function buildPossibleCheckoutScores(): Set<number> {
+  const possible = new Set<number>();
+  for (const first of SINGLE_DART_SCORES) {
+    for (const second of SINGLE_DART_SCORES) {
+      for (const third of DOUBLE_DART_SCORES) {
+        possible.add(first + second + third);
+        possible.add(first + third);
+        possible.add(third);
+      }
+    }
+  }
+  return possible;
+}
+
+const POSSIBLE_DOUBLE_START_SCORES = buildPossibleScoresWithAtLeastOneDouble();
+const POSSIBLE_CHECKOUT_SCORES = buildPossibleCheckoutScores();
+
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -94,7 +141,11 @@ const ALL_STAR_COLORS: Record<string, string> = {
 
 export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTurn, onEndGame }: ScoreboardProps) {
   const { settings } = useSettings();
-  const scoringMode = settings.x01ScoringMode;
+  const defaultMode = settings.x01ScoringMode;
+
+  // Local scoring mode override (allows in-game toggle + auto-switch)
+  const [modeOverride, setModeOverride] = useState<'dart' | 'turn' | null>(null);
+  const scoringMode = modeOverride ?? defaultMode;
 
   const [currentDarts, setCurrentDarts] = useState<Dart[]>([]);
   const [selectedSegment, setSelectedSegment] = useState<number | 'BULL' | 'MISS' | null>(null);
@@ -202,6 +253,17 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   const turnScoreSoFar = currentDarts.reduce((s, d) => s + d.score, 0);
   const liveRemaining = currentTeamScore ? currentTeamScore.remaining - getEffectiveTurnScore(currentDarts, doubleInRequired, currentTeamScore.hasDoubledIn) : target;
 
+  // Auto-switch to dart mode on single-dart-out (even ≤ 40) for better checkout % tracking
+  const isSingleDartOut = currentTeamScore
+    ? currentTeamScore.remaining > 0 && currentTeamScore.remaining <= 40 && currentTeamScore.remaining % 2 === 0
+    : false;
+
+  useEffect(() => {
+    if (isSingleDartOut && currentDarts.length === 0) {
+      setModeOverride('dart');
+    }
+  }, [isSingleDartOut, currentDarts.length]);
+
   const hasDoubledIn = useMemo(() => {
     if (!doubleInRequired) return true;
     if (currentTeamScore?.hasDoubledIn) return true;
@@ -248,7 +310,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       RemainingScore: remaining,
       IsDoubleIn: isDoubleIn,
       IsGameOut: isGameOut,
-      Details: JSON.stringify({ darts, bust: isBust, allStarLevel }),
+      Details: JSON.stringify({ darts, bust: isBust, allStarLevel, allStarCount: allStarLevel ? 1 : 0 }),
     });
 
     setCurrentDarts([]);
@@ -261,41 +323,45 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   };
 
   /* --- Turn mode: submit turn total --- */
-  const submitTurnScore = async (score: number, dartsOverride?: number) => {
+  const submitTurnScore = async (score: number, dartsOverride?: number, forceBust = false) => {
     if (!currentPlayer) return;
     setBustMessage('');
-    const remaining = (currentTeamScore?.remaining || target) - score;
+    const startingRemaining = currentTeamScore?.remaining || target;
+    const remaining = startingRemaining - score;
+    const requiresDoubleStart = doubleInRequired && !currentTeamScore?.hasDoubledIn && score > 0;
+    const isCheckoutAttempt = score === startingRemaining;
 
     // Validate
     if (score < 0 || score > 180) {
       setBustMessage('Invalid score (0-180)');
       return;
     }
-    if (remaining < 0) {
-      setBustMessage(`BUST! Would go below 0 (${remaining})`);
-      setTurnInput('');
+    if (!forceBust && isCheckoutAttempt && !POSSIBLE_CHECKOUT_SCORES.has(score)) {
+      setBustMessage('Impossible checkout score for double-out');
       return;
     }
-    if (remaining === 1) {
-      setBustMessage("BUST! Can't leave 1 — need a double to finish");
-      setTurnInput('');
+    if (!forceBust && requiresDoubleStart && !POSSIBLE_DOUBLE_START_SCORES.has(score)) {
+      setBustMessage('Impossible score while double-in is required');
       return;
     }
+    const isBust = forceBust || remaining < 0 || remaining === 1;
 
     // If remaining = 0, this is a game-out — ask how many darts were thrown
-    if (remaining === 0 && dartsOverride === undefined) {
+    if (!isBust && remaining === 0 && dartsOverride === undefined) {
       setDartsPromptScore(score);
       return;
     }
 
     const dartsThrown = dartsOverride || 3;
-    const isGameOut = remaining === 0;
+    const effectiveScore = isBust ? 0 : score;
+    const effectiveRemaining = isBust ? startingRemaining : remaining;
+    const isGameOut = !isBust && remaining === 0;
 
     // Auto double-in: if team hasn't doubled in and player scores > 0, assume they doubled in
-    const isDoubleIn = doubleInRequired && !currentTeamScore?.hasDoubledIn && score > 0;
+    const isDoubleIn = !isBust && doubleInRequired && !currentTeamScore?.hasDoubledIn && score > 0;
 
     // All-Star check
-    const allStarLevel = score > 0 ? getX01AllStarLevel(score, isDoubleIn, isGameOut) : null;
+    const allStarLevel = effectiveScore > 0 ? getX01AllStarLevel(effectiveScore, isDoubleIn, isGameOut) : null;
     if (allStarLevel) {
       setAllStarAnim({ level: allStarLevel, playerName: `${currentPlayer.FirstName} ${currentPlayer.LastName}` });
       setTimeout(() => setAllStarAnim(null), 2500);
@@ -303,12 +369,14 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
 
     // Audio announcements
     const playerFullName = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
-    if (allStarLevel) {
+    if (isBust) {
+      announceBust();
+    } else if (allStarLevel) {
       announceAllStar(allStarLevel, playerFullName);
     } else if (isGameOut) {
       announceGameOut(playerFullName);
     } else {
-      announceX01Score(score);
+      announceX01Score(effectiveScore);
     }
 
     await onAddTurn({
@@ -317,11 +385,11 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       TurnNumber: turns.length + 1,
       RoundNumber: currentRound,
       DartsThrown: dartsThrown,
-      Score: score,
-      RemainingScore: remaining,
+      Score: effectiveScore,
+      RemainingScore: effectiveRemaining,
       IsDoubleIn: isDoubleIn,
       IsGameOut: isGameOut,
-      Details: JSON.stringify({ allStarLevel }),
+      Details: JSON.stringify({ allStarLevel, allStarCount: allStarLevel ? 1 : 0, bust: isBust, attemptedScore: score }),
     });
 
     setTurnInput('');
@@ -343,24 +411,24 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
     await submitTurnScore(score, darts);
   };
 
-  /* --- Confirm a dart throw --- */
-  const confirmDart = useCallback((multiplier: 0 | 1 | 2 | 3) => {
-    if (selectedSegment === null || !currentPlayer) return;
+  /* --- Handle segment tap with pre-select support --- */
+  const handleSegmentTap = useCallback((seg: number | 'BULL') => {
     setBustMessage('');
+    // Determine multiplier: use pre-select if set, otherwise default to single (1)
+    const mult = preSelectMultiplier !== null
+      ? (seg === 'BULL' && preSelectMultiplier === 3 ? 2 : preSelectMultiplier) // Bull can't be triple, treat as double
+      : 1; // No pre-select = single
 
     const dart: Dart = {
-      segment: selectedSegment,
-      multiplier: selectedSegment === 'MISS' ? 0 : multiplier,
+      segment: seg,
+      multiplier: mult as 0 | 1 | 2 | 3,
       score: 0,
     };
     dart.score = calcDartScore(dart);
-
-    // Calculate remaining after this dart
     const allDarts = [...currentDarts, dart];
     const effectiveScore = getEffectiveTurnScore(allDarts, doubleInRequired, currentTeamScore?.hasDoubledIn || false);
     const remainingAfter = (currentTeamScore?.remaining || target) - effectiveScore;
 
-    // Bust checks
     if (remainingAfter < 0) {
       setBustMessage(`BUST! Would go below 0 (${remainingAfter})`);
       setPreSelectMultiplier(null);
@@ -379,79 +447,19 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       finishTurn(allDarts, true);
       return;
     }
-
-    // Checkout — reached exactly 0 with a double
     if (remainingAfter === 0 && isDouble(dart)) {
       setPreSelectMultiplier(null);
       finishTurn(allDarts, false);
       return;
     }
-
-    // 3 darts thrown — end turn normally
     if (allDarts.length >= MAX_DARTS_PER_TURN) {
       setPreSelectMultiplier(null);
       finishTurn(allDarts, false);
       return;
     }
-
     setCurrentDarts(allDarts);
     setSelectedSegment(null);
-    // Keep preSelectMultiplier active for consecutive throws
-  }, [selectedSegment, currentPlayer, currentDarts, currentTeamScore, doubleInRequired, target, turns.length, currentRound]);
-
-  /* --- Handle segment tap with pre-select support --- */
-  const handleSegmentTap = useCallback((seg: number | 'BULL') => {
-    setBustMessage('');
-    if (preSelectMultiplier !== null) {
-      // Apply pre-selected multiplier immediately
-      const mult = seg === 'BULL' ? 2 : preSelectMultiplier; // Bull can't be triple
-      setSelectedSegment(seg);
-      // Confirm immediately
-      setTimeout(() => {
-        const dart: Dart = {
-          segment: seg,
-          multiplier: mult as 0 | 1 | 2 | 3,
-          score: 0,
-        };
-        dart.score = calcDartScore(dart);
-        const allDarts = [...currentDarts, dart];
-        const effectiveScore = getEffectiveTurnScore(allDarts, doubleInRequired, currentTeamScore?.hasDoubledIn || false);
-        const remainingAfter = (currentTeamScore?.remaining || target) - effectiveScore;
-
-        if (remainingAfter < 0) {
-          setBustMessage(`BUST! Would go below 0 (${remainingAfter})`);
-          setPreSelectMultiplier(null);
-          finishTurn(allDarts, true);
-          return;
-        }
-        if (remainingAfter === 1) {
-          setBustMessage("BUST! Can't leave 1 — need a double to finish");
-          setPreSelectMultiplier(null);
-          finishTurn(allDarts, true);
-          return;
-        }
-        if (remainingAfter === 0 && !isDouble(dart)) {
-          setBustMessage('BUST! Must finish on a double');
-          setPreSelectMultiplier(null);
-          finishTurn(allDarts, true);
-          return;
-        }
-        if (remainingAfter === 0 && isDouble(dart)) {
-          setPreSelectMultiplier(null);
-          finishTurn(allDarts, false);
-          return;
-        }
-        if (allDarts.length >= MAX_DARTS_PER_TURN) {
-          setPreSelectMultiplier(null);
-          finishTurn(allDarts, false);
-          return;
-        }
-        setCurrentDarts(allDarts);
-        setSelectedSegment(null);
-      }, 0);
-    } else {
-      setSelectedSegment(seg);
-    }
+    // Don't clear preSelectMultiplier — keep it active for consecutive throws
   }, [preSelectMultiplier, currentDarts, currentTeamScore, doubleInRequired, target, turns.length, currentRound]);
 
   /* --- Miss shortcut --- */
@@ -529,17 +537,6 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   const currentTeamTextColor = currentPlayerColor
     ? '#fff'
     : (currentPlayer?.TeamSeasonID === homeTeamId ? 'var(--color-text-on-primary)' : 'var(--color-text-on-secondary)');
-
-  /* --- Available multipliers for selected segment --- */
-  const availableMultipliers = useMemo(() => {
-    if (selectedSegment === null || selectedSegment === 'MISS') return [];
-    if (selectedSegment === 'BULL') return [{ label: 'Single (25)', value: 1 as const }, { label: 'Double (50)', value: 2 as const }];
-    return [
-      { label: 'Single', value: 1 as const },
-      { label: 'Double', value: 2 as const },
-      { label: 'Triple', value: 3 as const },
-    ];
-  }, [selectedSegment]);
 
   return (
     <div style={{ width: '100%', margin: '0 auto' }}>
@@ -711,6 +708,8 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
         );
       })()}
 
+      {/* ===== Scoring Mode Toggle (moved to bottom near undo) ===== */}
+
       {/* ===== Current Turn Darts (dart mode only) ===== */}
       {!disabled && scoringMode === 'dart' && (
         <Card style={{ marginBottom: 'var(--spacing-md)' }}>
@@ -804,43 +803,10 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
             </Button>
           </div>
 
-          {/* Multiplier buttons (show when segment is selected AND no pre-select) */}
-          {selectedSegment !== null && selectedSegment !== 'MISS' && preSelectMultiplier === null && (
-            <div style={{
-              display: 'flex', gap: 'var(--spacing-sm)', justifyContent: 'center',
-              marginBottom: 'var(--spacing-md)', flexWrap: 'wrap',
-            }}>
-              {availableMultipliers.map(m => {
-                const previewScore = selectedSegment === 'BULL'
-                  ? (m.value === 2 ? 50 : 25)
-                  : (selectedSegment as number) * m.value;
-                return (
-                  <Button
-                    key={m.value}
-                    size="lg"
-                    variant="primary"
-                    onClick={() => confirmDart(m.value)}
-                    style={{
-                      minWidth: 100, minHeight: 56, fontSize: '1rem',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center',
-                    }}
-                  >
-                    <span>{m.label}</span>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 700 }}>{previewScore}</span>
-                  </Button>
-                );
-              })}
-              <Button variant="ghost" size="lg" onClick={() => setSelectedSegment(null)}
-                style={{ minWidth: 80, minHeight: 56 }}>
-                Cancel
-              </Button>
-            </div>
-          )}
-
           {/* Segment grid */}
           <div style={{ marginBottom: 'var(--spacing-sm)' }}>
             <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: 'var(--spacing-xs)', color: 'var(--color-text-light)' }}>
-              {preSelectMultiplier === 2 ? 'Tap segment for DOUBLE' : preSelectMultiplier === 3 ? 'Tap segment for TREBLE' : 'Select Segment'}
+              {preSelectMultiplier === 2 ? 'Tap segment for DOUBLE' : preSelectMultiplier === 3 ? 'Tap segment for TREBLE' : 'Tap segment for SINGLE'}
             </div>
             <div style={{
               display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)',
@@ -850,11 +816,11 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                 <Button
                   key={seg}
                   size="lg"
-                  variant={selectedSegment === seg ? 'secondary' : 'ghost'}
+                  variant="ghost"
                   onClick={() => handleSegmentTap(seg)}
                   style={{
                     fontSize: '1.1rem', fontWeight: 700, minHeight: 52,
-                    border: selectedSegment === seg ? '2px solid var(--color-secondary)' : '1px solid var(--color-border)',
+                    border: '1px solid var(--color-border)',
                   }}
                 >
                   {seg}
@@ -866,11 +832,11 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--spacing-xs)', marginTop: 'var(--spacing-xs)' }}>
               <Button
                 size="lg"
-                variant={selectedSegment === 'BULL' ? 'secondary' : 'ghost'}
+                variant="ghost"
                 onClick={() => handleSegmentTap('BULL')}
                 style={{
                   fontSize: '1.1rem', fontWeight: 700, minHeight: 52,
-                  border: selectedSegment === 'BULL' ? '2px solid var(--color-secondary)' : '1px solid var(--color-border)',
+                  border: '1px solid var(--color-border)',
                 }}
               >
                 BULL
@@ -888,6 +854,24 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                 MISS
               </Button>
             </div>
+
+            {/* Submit Score button for partial turns */}
+            {currentDarts.length > 0 && (
+              <Button
+                size="lg"
+                variant="primary"
+                onClick={() => finishTurn(currentDarts, false)}
+                style={{
+                  width: '100%',
+                  marginTop: 'var(--spacing-sm)',
+                  minHeight: 52,
+                  fontSize: '1.1rem',
+                  fontWeight: 700,
+                }}
+              >
+                Submit Score ({currentDarts.reduce((s, d) => s + d.score, 0)})
+              </Button>
+            )}
           </div>
         </Card>
       )}
@@ -930,6 +914,16 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                   {s}
                 </Button>
               ))}
+              <Button
+                variant="ghost"
+                onClick={() => submitTurnScore(Number(turnInput) || 0, undefined, true)}
+                style={{
+                  minWidth: 72, minHeight: 48, fontWeight: 700, fontSize: '1rem',
+                  border: '1px solid var(--color-danger)', color: 'var(--color-danger)',
+                }}
+              >
+                BUST
+              </Button>
             </div>
 
             {/* Numpad */}
@@ -1032,12 +1026,35 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
         </>
       )}
 
-      {/* ===== Undo ===== */}
-      {(currentDarts.length > 0 || turns.length > 0) && !disabled && (
-        <div style={{ textAlign: 'center', marginBottom: 'var(--spacing-lg)' }}>
-          <Button variant="ghost" size="sm" onClick={handleUndo}>
-            ↩️ {currentDarts.length > 0 && scoringMode === 'dart' ? 'Undo Last Dart' : 'Undo Last Turn'}
+      {/* ===== Scoring Mode Toggle + Undo ===== */}
+      {!disabled && (
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 'var(--spacing-lg)', gap: 'var(--spacing-sm)', alignItems: 'center', flexWrap: 'wrap' }}>
+          {(currentDarts.length > 0 || turns.length > 0) && (
+            <Button variant="ghost" size="sm" onClick={handleUndo}>
+              ↩️ {currentDarts.length > 0 && scoringMode === 'dart' ? 'Undo Last Dart' : 'Undo Last Turn'}
+            </Button>
+          )}
+          <Button
+            variant={scoringMode === 'turn' ? 'primary' : 'ghost'}
+            size="sm"
+            onClick={() => { setModeOverride('turn'); setCurrentDarts([]); }}
+            style={{ fontWeight: 700, minWidth: 90 }}
+          >
+            Turn Total
           </Button>
+          <Button
+            variant={scoringMode === 'dart' ? 'primary' : 'ghost'}
+            size="sm"
+            onClick={() => { setModeOverride('dart'); setTurnInput(''); }}
+            style={{ fontWeight: 700, minWidth: 90 }}
+          >
+            3 Dart
+          </Button>
+          {isSingleDartOut && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', fontWeight: 700 }}>
+              ⚡ Single dart out!
+            </span>
+          )}
         </div>
       )}
 

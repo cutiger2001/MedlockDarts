@@ -40,7 +40,8 @@ export function PlayGamePage() {
     ...teamA.players.map(p => p.PlayerID),
     ...teamB.players.map(p => p.PlayerID),
   ]);
-  const availablePlayers = allPlayers.filter(p => !pickedIds.has(p.PlayerID) && p.IsActive);
+  const availablePlayers = allPlayers.filter(p => !pickedIds.has(p.PlayerID) && p.IsActive)
+    .sort((a, b) => a.FirstName.localeCompare(b.FirstName) || a.LastName.localeCompare(b.LastName));
 
   const addToTeam = (team: 'A' | 'B', player: Player) => {
     if (team === 'A') {
@@ -231,26 +232,28 @@ export function PlayGamePage() {
         />
 
         {gameType === 'X01' && (
-          <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', marginTop: 'var(--spacing-sm)' }}>
-            <Select
-              label="Target"
-              options={[
-                { value: '301', label: '301' },
-                { value: '501', label: '501' },
-                { value: '701', label: '701' },
-                { value: '1001', label: '1001' },
-              ]}
-              value={x01Target}
-              onChange={e => setX01Target(e.target.value)}
-            />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', cursor: 'pointer', minHeight: 'var(--tap-target)', marginTop: 'auto' }}>
+          <div style={{ display: 'flex', gap: 'var(--spacing-lg)', flexWrap: 'wrap', marginTop: 'var(--spacing-md)', alignItems: 'flex-end' }}>
+            <div style={{ flex: '0 0 auto' }}>
+              <Select
+                label="Target"
+                options={[
+                  { value: '301', label: '301' },
+                  { value: '501', label: '501' },
+                  { value: '701', label: '701' },
+                  { value: '1001', label: '1001' },
+                ]}
+                value={x01Target}
+                onChange={e => setX01Target(e.target.value)}
+              />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', cursor: 'pointer', minHeight: 'var(--tap-target)', paddingBottom: 2 }}>
               <input
                 type="checkbox"
                 checked={doubleInRequired}
                 onChange={e => setDoubleInRequired(e.target.checked)}
-                style={{ width: 20, height: 20 }}
+                style={{ width: 22, height: 22 }}
               />
-              <span style={{ fontWeight: 600 }}>Double In</span>
+              <span style={{ fontWeight: 600, fontSize: '1rem' }}>Double In</span>
             </label>
           </div>
         )}

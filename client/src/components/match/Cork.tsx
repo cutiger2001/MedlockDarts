@@ -7,6 +7,8 @@ interface CorkProps {
   gameNumber: number;
   match: Match;
   players: GamePlayer[];
+  mode?: 'initial' | 'g3' | 'g5';
+  baseOrder?: GamePlayer[];
   onCorkComplete: (orderedPlayers: GamePlayer[]) => void;
 }
 
@@ -16,14 +18,31 @@ interface CorkProps {
  * Step 2: "Who throws second?" — pick from the opposing team
  * Result: CorkWinner → SelectedOpp → Partner → OppPartner
  */
-export function Cork({ gameNumber, match, players, onCorkComplete }: CorkProps) {
+export function Cork({ gameNumber, match, players, mode = 'initial', baseOrder, onCorkComplete }: CorkProps) {
   const [step, setStep] = useState<'cork' | 'second'>('cork');
   const [corkWinner, setCorkWinner] = useState<GamePlayer | null>(null);
 
   const homePlayers = players.filter(p => p.TeamSeasonID === match.HomeTeamSeasonID);
   const awayPlayers = players.filter(p => p.TeamSeasonID === match.AwayTeamSeasonID);
+  const canUsePatternMode = !!baseOrder && baseOrder.length === 4 && (mode === 'g3' || mode === 'g5');
 
   const handleCorkWinner = (player: GamePlayer) => {
+    if (canUsePatternMode && baseOrder) {
+      if (mode === 'g3') {
+        const order = player.PlayerID === baseOrder[3].PlayerID
+          ? [baseOrder[3], baseOrder[2], baseOrder[1], baseOrder[0]]
+          : [baseOrder[2], baseOrder[3], baseOrder[0], baseOrder[1]];
+        onCorkComplete(order);
+        return;
+      }
+
+      const order = player.PlayerID === baseOrder[1].PlayerID
+        ? [baseOrder[1], baseOrder[0], baseOrder[2], baseOrder[3]]
+        : [baseOrder[0], baseOrder[1], baseOrder[2], baseOrder[3]];
+      onCorkComplete(order);
+      return;
+    }
+
     setCorkWinner(player);
     // If teams only have one player each, skip step 2
     const oppTeam = player.TeamSeasonID === match.HomeTeamSeasonID ? awayPlayers : homePlayers;
@@ -56,6 +75,9 @@ export function Cork({ gameNumber, match, players, onCorkComplete }: CorkProps) 
 
   const oppTeamPlayers = corkWinner
     ? (corkWinner.TeamSeasonID === match.HomeTeamSeasonID ? awayPlayers : homePlayers)
+    : [];
+  const patternPlayers = canUsePatternMode && baseOrder
+    ? (mode === 'g3' ? [baseOrder[2], baseOrder[3]] : [baseOrder[0], baseOrder[1]])
     : [];
 
   const playerButton = (p: GamePlayer, onClick: () => void) => (
@@ -92,15 +114,17 @@ export function Cork({ gameNumber, match, players, onCorkComplete }: CorkProps) 
       {step === 'cork' && (
         <>
           <p style={{ color: 'var(--color-text-light)', marginBottom: 'var(--spacing-md)' }}>
-            Who won the cork? Their team throws first.
+            {canUsePatternMode
+              ? 'Who won the cork and starts this game?'
+              : 'Who won the cork? Their team throws first.'}
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-md)', justifyContent: 'center' }}>
-            {players.map(p => playerButton(p, () => handleCorkWinner(p)))}
+            {(canUsePatternMode ? patternPlayers : players).map(p => playerButton(p, () => handleCorkWinner(p)))}
           </div>
         </>
       )}
 
-      {step === 'second' && corkWinner && (
+      {!canUsePatternMode && step === 'second' && corkWinner && (
         <>
           <p style={{ color: 'var(--color-text-light)', marginBottom: 'var(--spacing-sm)' }}>
             <strong>{corkWinner.FirstName} {corkWinner.LastName}</strong> won the cork!

@@ -23,23 +23,68 @@ export function setAudioEnabled(enabled: boolean): void {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Core speak helper                                                  */
+/*  Core speak helper — queue-based to avoid clipping                  */
 /* ------------------------------------------------------------------ */
 
-function speak(text: string, options?: { rate?: number; pitch?: number; volume?: number }): void {
-  if (!isAudioEnabled()) return;
+let isSpeaking = false;
+let pendingUtterance: { text: string; options?: { rate?: number; pitch?: number; volume?: number } } | null = null;
+let safariUnlocked = false;
+
+/**
+ * Safari/iOS requires the first speechSynthesis.speak() to originate
+ * from a user-gesture (tap/click) call stack.  Call this once from any
+ * tap handler (e.g. first score tap, coin-toss button) to "unlock" the
+ * audio context.  Subsequent speaks then work freely.
+ */
+export function unlockSpeechSynthesis(): void {
+  if (safariUnlocked) return;
   if (typeof window === 'undefined' || !window.speechSynthesis) return;
+  const utterance = new SpeechSynthesisUtterance('');
+  utterance.volume = 0;
+  utterance.lang = 'en-US';
+  window.speechSynthesis.speak(utterance);
+  safariUnlocked = true;
+}
 
-  // Cancel any queued utterances so announcements don't pile up
-  window.speechSynthesis.cancel();
-
+function speakNow(text: string, options?: { rate?: number; pitch?: number; volume?: number }): void {
+  isSpeaking = true;
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = options?.rate ?? 1.0;
   utterance.pitch = options?.pitch ?? 1.0;
   utterance.volume = options?.volume ?? 1.0;
   utterance.lang = 'en-US';
 
+  utterance.onend = () => {
+    isSpeaking = false;
+    if (pendingUtterance) {
+      const next = pendingUtterance;
+      pendingUtterance = null;
+      speakNow(next.text, next.options);
+    }
+  };
+  utterance.onerror = () => {
+    isSpeaking = false;
+    pendingUtterance = null;
+  };
+
   window.speechSynthesis.speak(utterance);
+}
+
+function speak(text: string, options?: { rate?: number; pitch?: number; volume?: number }): void {
+  if (!isAudioEnabled()) return;
+  if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+  // Safari workaround: cancel stale queue to prevent stuck synthesis
+  if (!isSpeaking) {
+    window.speechSynthesis.cancel();
+  }
+
+  if (isSpeaking) {
+    // Let current utterance finish; replace any pending with the latest
+    pendingUtterance = { text, options };
+  } else {
+    speakNow(text, options);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -142,6 +187,15 @@ export function announceMatchWinner(teamName: string): void {
   speak(`${teamName} wins the match! Congratulations!`, {
     rate: 0.85,
     pitch: 1.3,
+    volume: 1.0,
+  });
+}
+
+/** Announce league champions after playoff final */
+export function announceChampion(teamName: string): void {
+  speak(`${teamName} are the league champions! What a season! Congratulations!`, {
+    rate: 0.8,
+    pitch: 1.4,
     volume: 1.0,
   });
 }

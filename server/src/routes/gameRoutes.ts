@@ -85,6 +85,14 @@ router.post('/:id/players', asyncHandler(async (req, res) => {
   res.status(201).json({ success: true });
 }));
 
+router.put('/:id/players/order', asyncHandler(async (req, res) => {
+  const { playerIds } = req.body;
+  if (!playerIds || !Array.isArray(playerIds)) throw new AppError(400, 'playerIds array is required');
+  await gameService.reorderGamePlayers(Number(req.params.id), playerIds.map(Number));
+  const players = await gameService.getGamePlayers(Number(req.params.id));
+  res.json(players);
+}));
+
 // Turns
 router.get('/:id/turns', asyncHandler(async (req, res) => {
   const turns = await gameService.getTurns(Number(req.params.id));

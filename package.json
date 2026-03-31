@@ -4,9 +4,11 @@
   "private": true,
   "description": "Dart scoring app with league play, statistics tracking, and multiple game types",
   "scripts": {
+    "run": "npm run dev",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
+    "test:generate-season": "powershell -ExecutionPolicy Bypass -File scripts/test-generate-season.ps1",
     "build": "npm run build:client && npm run build:server",
     "build:server": "cd server && npm run build",
     "build:client": "cd client && npm run build",

@@ -103,7 +103,7 @@ export function PlayersPage() {
         <Card><p style={{ textAlign: 'center', color: 'var(--color-text-light)' }}>No players yet. Add your first player!</p></Card>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 'var(--spacing-md)' }}>
-          {players.filter(p => p.IsActive).map(p => (
+          {players.filter(p => p.IsActive).sort((a, b) => a.FirstName.localeCompare(b.FirstName) || a.LastName.localeCompare(b.LastName)).map(p => (
             <Card key={p.PlayerID}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
                 {p.ImageData ? (
