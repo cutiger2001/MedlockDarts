@@ -8,6 +8,7 @@ import { X01Scoreboard } from '../components/games/X01Scoreboard';
 import { CricketScoreboard } from '../components/games/CricketScoreboard';
 import { ShanghaiScoreboard } from '../components/games/ShanghaiScoreboard';
 import { RoundTheWorldScoreboard } from '../components/games/RoundTheWorldScoreboard';
+import { KillerScoreboard } from '../components/games/KillerScoreboard';
 import { Cork } from '../components/match/Cork';
 import { Button } from '../components/common/Button';
 import { Modal } from '../components/common/Modal';
@@ -35,6 +36,7 @@ export function GamePage() {
   const [showAbandon, setShowAbandon] = useState(false);
   const [isAdHoc, setIsAdHoc] = useState(false);
   const [showEndOverlay, setShowEndOverlay] = useState(true);
+  const [killerOrderPicked, setKillerOrderPicked] = useState<GamePlayer[]>([]);
 
   const isCricketType = (type: string) => type === 'Cricket';
 
@@ -261,6 +263,12 @@ export function GamePage() {
   const handleRematch = async () => {
     if (!game || !match) return;
     try {
+      // Killer rematch: players must re-assign numbers, so redirect to setup page
+      if (game.GameType === 'Killer') {
+        const allPids = [...players].sort((a, b) => a.PlayerOrder - b.PlayerOrder).map(p => p.PlayerID);
+        navigate('/play', { state: { killerRematch: true, killerLives: game.KillerLives ?? 5, playerIds: allPids } });
+        return;
+      }
       const homePids = players.filter(p => p.TeamSeasonID === match.HomeTeamSeasonID)
         .sort((a, b) => a.PlayerOrder - b.PlayerOrder).map(p => p.PlayerID);
       const awayPids = players.filter(p => p.TeamSeasonID === match.AwayTeamSeasonID)
@@ -319,7 +327,17 @@ export function GamePage() {
   // Auto-order games that do not need a fresh cork
   useEffect(() => {
     if (!game || !match) return;
-    const _hasTurns = turns.length > 0 || cricketTurns.length > 0;
+    const _hasTurns = game?.GameType === 'Killer'
+      ? turns.some(t => {
+          try {
+            const d = JSON.parse(t.Details || '{}');
+            if (d.action === 'setup' || d.action === 'game_options') return false;
+            if (Array.isArray(d.actions) && d.actions.length === 1 &&
+                ['setup', 'game_options'].includes(d.actions[0].action)) return false;
+            return true;
+          } catch { return true; }
+        })
+      : turns.length > 0 || cricketTurns.length > 0;
     if (corkDone || _hasTurns || game.Status === 'Completed' || players.length < 2) return;
 
     if (isLeagueTeamMatch) {
@@ -373,7 +391,17 @@ export function GamePage() {
   if (loading) return <p>Loading game...</p>;
   if (!game || !match) return <p>Game not found</p>;
 
-  const hasTurns = turns.length > 0 || cricketTurns.length > 0;
+  const hasTurns = game?.GameType === 'Killer'
+    ? turns.some(t => {
+        try {
+          const d = JSON.parse(t.Details || '{}');
+          if (d.action === 'setup' || d.action === 'game_options') return false;
+          if (Array.isArray(d.actions) && d.actions.length === 1 &&
+              ['setup', 'game_options'].includes(d.actions[0].action)) return false;
+          return true;
+        } catch { return true; }
+      })
+    : turns.length > 0 || cricketTurns.length > 0;
   const needsCork = isLeagueTeamMatch
     ? !corkDone && !hasTurns && game.Status !== 'Completed' && players.length > 1
       && (game.GameNumber === 1 || gameTypeChangedFromPrevious)
@@ -408,6 +436,56 @@ export function GamePage() {
     if (game.GameType === 'X01') {
       return { label: 'Avg', value: (ppd * 3).toFixed(1) };
     }
+    if (game.GameType === 'Killer') {
+      let kills = 0;
+      let eliminations = 0;
+      for (const t of pt) {
+        try {
+          const d = t.Details ? JSON.parse(t.Details) : null;
+          if (!d) continue;
+          if (Array.isArray(d.actions)) {
+            for (const a of d.actions) {
+              if (a.action === 'remove') kills++;
+            }
+          } else if (d.action === 'remove') {
+            kills++;
+          }
+          // Check if this turn caused an elimination (target went to 0 and was hit)
+          // We track eliminations by replaying — simpler: count 'remove' actions where target becomes eliminated
+        } catch { /* ignore */ }
+      }
+      // Count eliminations by replaying all turns
+      const stateMap = new Map<number, number>(); // playerId -> lives
+      const elimBy = new Map<number, number>(); // eliminatorId -> count
+      for (const p of effectivePlayers) stateMap.set(p.PlayerID, 0);
+      for (const t of turns) {
+        try {
+          const d = t.Details ? JSON.parse(t.Details) : null;
+          if (!d) continue;
+          const processAction = (action: string, details: any, turnPlayerId: number) => {
+            if (action === 'add') {
+              const cur = stateMap.get(turnPlayerId) || 0;
+              stateMap.set(turnPlayerId, Math.min(game.KillerLives || 5, cur + 1));
+            } else if (action === 'remove') {
+              const tid = details.targetPlayerId;
+              const cur = stateMap.get(tid) || 0;
+              if (cur <= 0) {
+                elimBy.set(turnPlayerId, (elimBy.get(turnPlayerId) || 0) + 1);
+              } else {
+                stateMap.set(tid, cur - 1);
+              }
+            }
+          };
+          if (Array.isArray(d.actions)) {
+            for (const a of d.actions) processAction(a.action, a, t.PlayerID);
+          } else if (d.action) {
+            processAction(d.action, d, t.PlayerID);
+          }
+        } catch { /* ignore */ }
+      }
+      eliminations = elimBy.get(playerId) || 0;
+      return { label: 'Kills', value: `${kills}`, extra: `Elims: ${eliminations}` };
+    }
     return { label: 'Score', value: String(totalScore) };
   };
 
@@ -430,6 +508,9 @@ export function GamePage() {
     const ppd = totalDarts > 0 ? totalScore / totalDarts : 0;
     if (game.GameType === 'X01') {
       return { label: 'Team Avg', value: (ppd * 3).toFixed(1) };
+    }
+    if (game.GameType === 'Killer') {
+      return null; // Killer is free-for-all, no team stats
     }
     return { label: 'Team Score', value: String(totalScore) };
   };
@@ -625,13 +706,14 @@ export function GamePage() {
                     <div key={p.PlayerID} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--color-border)', fontSize: '0.9rem' }}>
                       <span>{p.FirstName} {p.LastName}</span>
                       <span style={{ fontWeight: 700 }}>
-                        {s.label}: {s.value}{co ? ` | CO: ${co}` : ''}
+                        {s.label}: {s.value}{s.extra ? ` | ${s.extra}` : ''}{co ? ` | CO: ${co}` : ''}
                       </span>
                     </div>
                   );
                 })}
                 {homeTeamPlayers.length > 1 && (() => {
                   const ts = computeTeamStat(homeTeamPlayers.map(p => p.PlayerID));
+                  if (!ts) return null;
                   const co = computeCloseoutPct(homeTeamPlayers.map(p => p.PlayerID));
                   return (
                     <>
@@ -662,13 +744,14 @@ export function GamePage() {
                     <div key={p.PlayerID} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--color-border)', fontSize: '0.9rem' }}>
                       <span>{p.FirstName} {p.LastName}</span>
                       <span style={{ fontWeight: 700 }}>
-                        {s.label}: {s.value}{co ? ` | CO: ${co}` : ''}
+                        {s.label}: {s.value}{s.extra ? ` | ${s.extra}` : ''}{co ? ` | CO: ${co}` : ''}
                       </span>
                     </div>
                   );
                 })}
                 {awayTeamPlayers.length > 1 && (() => {
                   const ts = computeTeamStat(awayTeamPlayers.map(p => p.PlayerID));
+                  if (!ts) return null;
                   const co = computeCloseoutPct(awayTeamPlayers.map(p => p.PlayerID));
                   return (
                     <>
@@ -724,7 +807,7 @@ export function GamePage() {
       {error && <p style={{ color: 'var(--color-danger)', marginBottom: 'var(--spacing-md)' }}>{error}</p>}
 
       {/* Cork UI for odd-numbered games */}
-      {needsCork && (
+      {needsCork && game.GameType !== 'Killer' && (
         <Cork
           gameNumber={game.GameNumber}
           match={match}
@@ -734,6 +817,75 @@ export function GamePage() {
           onCorkComplete={handleCorkComplete}
         />
       )}
+
+      {/* Killer throw order — sequential step-by-step picker */}
+      {needsCork && game.GameType === 'Killer' && (() => {
+        const remaining = [...players]
+          .sort((a, b) => a.PlayerOrder - b.PlayerOrder)
+          .filter(p => !killerOrderPicked.some(op => op.PlayerID === p.PlayerID));
+        const ordinal = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth'];
+        const step = killerOrderPicked.length;
+        return (
+          <div style={{
+            background: 'var(--color-surface)', border: '1px solid var(--color-border)',
+            borderRadius: 'var(--radius-md)', padding: 'var(--spacing-lg)',
+            marginBottom: 'var(--spacing-lg)', textAlign: 'center',
+          }}>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: 'var(--spacing-sm)' }}>
+              🎯 Throwing Order — Who throws {ordinal[step] ?? `#${step + 1}`}?
+            </div>
+            {killerOrderPicked.length > 0 && (
+              <p style={{ color: 'var(--color-text-light)', fontSize: '0.85rem', marginBottom: 'var(--spacing-md)' }}>
+                So far: {killerOrderPicked.map(p => p.FirstName).join(' → ')}
+              </p>
+            )}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-md)', justifyContent: 'center', marginBottom: 'var(--spacing-md)' }}>
+              {remaining.map(p => (
+                <button
+                  key={p.PlayerID}
+                  onClick={() => {
+                    const next = [...killerOrderPicked, p];
+                    const stillRemaining = players.filter(pl => !next.some(op => op.PlayerID === pl.PlayerID));
+                    if (stillRemaining.length === 1) {
+                      // Auto-add the last player
+                      const final = [...next, stillRemaining[0]];
+                      setKillerOrderPicked([]);
+                      handleCorkComplete(final);
+                    } else if (stillRemaining.length === 0) {
+                      setKillerOrderPicked([]);
+                      handleCorkComplete(next);
+                    } else {
+                      setKillerOrderPicked(next);
+                    }
+                  }}
+                  style={{
+                    padding: 'var(--spacing-md) var(--spacing-lg)',
+                    minHeight: 'var(--tap-target)', minWidth: 140,
+                    border: `2px solid ${p.ThemeColor || 'var(--color-primary)'}`,
+                    borderRadius: 'var(--radius-md)',
+                    backgroundColor: 'var(--color-surface)',
+                    color: 'var(--color-text)',
+                    fontWeight: 700, fontSize: '1rem', cursor: 'pointer',
+                  }}
+                >
+                  {p.FirstName} {p.LastName}
+                </button>
+              ))}
+            </div>
+            {killerOrderPicked.length > 0 && (
+              <button
+                onClick={() => setKillerOrderPicked(prev => prev.slice(0, -1))}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--color-text-light)',
+                  cursor: 'pointer', fontSize: '0.85rem', textDecoration: 'underline',
+                }}
+              >
+                ↩ Undo last pick
+              </button>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Small banner when overlay is dismissed */}
       {game.Status === 'Completed' && !showEndOverlay && (
@@ -764,6 +916,9 @@ export function GamePage() {
       )}
       {game.GameType === 'RoundTheWorld' && (
         <RoundTheWorldScoreboard {...baseProps} turns={turns} onAddTurn={addTurn} onUndoTurn={undoTurn} />
+      )}
+      {game.GameType === 'Killer' && (
+        <KillerScoreboard {...baseProps} turns={turns} onAddTurn={addTurn} onUndoTurn={undoTurn} />
       )}
 
       {players.length === 0 && game.Status !== 'Completed' && (

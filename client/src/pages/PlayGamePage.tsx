@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { playerService } from '../services/playerService';
 import { gameService } from '../services/gameService';
 import type { Player, GameType } from '../types';
@@ -17,6 +17,8 @@ interface TeamSetup {
 
 export function PlayGamePage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const rematch = (location.state as { killerRematch?: boolean; killerLives?: number; playerIds?: number[] } | null) ?? null;
   const [allPlayers, setAllPlayers] = useState<Player[]>([]);
   const [teamPlay, setTeamPlay] = useState(false);
   const [teamA, setTeamA] = useState<TeamSetup>({ players: [] });
@@ -25,6 +27,9 @@ export function PlayGamePage() {
   const [x01Target, setX01Target] = useState('501');
   const [doubleInRequired, setDoubleInRequired] = useState(false);
   const [rtwMode, setRtwMode] = useState('1to20');
+  const [killerLives, setKillerLives] = useState('5');
+  const [killerImmunity, setKillerImmunity] = useState(true);
+  const [killerTargets, setKillerTargets] = useState<Record<number, number>>({});
   const [error, setError] = useState('');
 
   // Add player modal
@@ -32,7 +37,18 @@ export function PlayGamePage() {
   const [newPlayerForm, setNewPlayerForm] = useState({ FirstName: '', LastName: '' });
 
   useEffect(() => {
-    playerService.getAll().then(setAllPlayers);
+    playerService.getAll().then(all => {
+      setAllPlayers(all);
+      // Pre-fill from Killer rematch state
+      if (rematch?.killerRematch && rematch.playerIds && rematch.playerIds.length > 0) {
+        setGameType('Killer');
+        setKillerLives(String(rematch.killerLives ?? 5));
+        const preSelected = rematch.playerIds
+          .map(id => all.find(p => p.PlayerID === id))
+          .filter((p): p is Player => !!p && p.IsActive);
+        setTeamA({ players: preSelected });
+      }
+    });
   }, []);
 
   // Players already picked
@@ -74,13 +90,20 @@ export function PlayGamePage() {
 
   const canStart = () => {
     if (!gameType) return false;
+    if (gameType === 'Killer') {
+      // Killer: 2+ players, all must have unique target numbers
+      const allKillerPlayers = teamA.players;
+      if (allKillerPlayers.length < 2) return false;
+      const targets = allKillerPlayers.map(p => killerTargets[p.PlayerID]).filter(Boolean);
+      if (targets.length !== allKillerPlayers.length) return false;
+      if (new Set(targets).size !== targets.length) return false; // no duplicates
+      return true;
+    }
     if (teamPlay) {
-      // Team play: both teams need players, same count, max 4
       return teamA.players.length >= 1 && teamB.players.length >= 1
         && teamA.players.length === teamB.players.length
         && teamA.players.length <= MAX_PLAYERS_PER_TEAM;
     }
-    // Solo or 1v1: at least 1 player on team A
     return teamA.players.length >= 1;
   };
 
@@ -93,6 +116,77 @@ export function PlayGamePage() {
       let teamAPlayers: number[];
       let teamBPlayers: number[];
       let isTeamPlay = teamPlay;
+
+      if (gameType === 'Killer') {
+        // Killer: all players go on team A, team B gets the first pair for match infra
+        // We pair players as 1v1 for the match infrastructure, but the game is FFA
+        const allPids = teamA.players.map(p => p.PlayerID);
+        teamAPlayers = [allPids[0]];
+        teamBPlayers = [allPids[1]];
+        isTeamPlay = false;
+        // Extra players added as additional GamePlayers after creation
+
+        const game = await gameService.createAdHoc({
+          GameType: gameType as GameType,
+          KillerLives: Number(killerLives),
+          TeamAPlayers: teamAPlayers,
+          TeamBPlayers: teamBPlayers,
+          TeamPlay: isTeamPlay,
+        });
+
+        // Add remaining players as game players (all on team A for simplicity)
+        if (allPids.length > 2) {
+          const existingPlayers = await gameService.getPlayers(game.GameID);
+          const existingIds = new Set(existingPlayers.map(p => p.PlayerID));
+          const additionalPlayers = allPids.filter(pid => !existingIds.has(pid));
+          if (additionalPlayers.length > 0) {
+            const match = await (await import('../services/matchService')).matchService.getById(game.MatchID);
+            const tsId = match?.HomeTeamSeasonID || existingPlayers[0]?.TeamSeasonID || 0;
+            await gameService.addPlayers(game.GameID,
+              additionalPlayers.map((pid, idx) => ({
+                PlayerID: pid,
+                TeamSeasonID: tsId,
+                PlayerOrder: existingIds.size + idx + 1,
+              }))
+            );
+          }
+        }
+
+        // Create game options turn first
+        const gamePlayers = await gameService.getPlayers(game.GameID);
+        const firstGp = gamePlayers[0];
+        if (firstGp) {
+          await gameService.addTurn(game.GameID, {
+            PlayerID: firstGp.PlayerID,
+            TeamSeasonID: firstGp.TeamSeasonID,
+            TurnNumber: 0,
+            RoundNumber: 0,
+            Score: 0,
+            Details: JSON.stringify({ action: 'game_options', firstRoundImmunity: killerImmunity }),
+          });
+        }
+
+        // Create setup turns for target numbers
+        for (const p of teamA.players) {
+          const gp = gamePlayers.find(gpl => gpl.PlayerID === p.PlayerID);
+          if (gp && killerTargets[p.PlayerID]) {
+            await gameService.addTurn(game.GameID, {
+              PlayerID: p.PlayerID,
+              TeamSeasonID: gp.TeamSeasonID,
+              TurnNumber: 0,
+              RoundNumber: 0,
+              Score: 0,
+              Details: JSON.stringify({
+                action: 'setup',
+                targetNumber: killerTargets[p.PlayerID],
+              }),
+            });
+          }
+        }
+
+        navigate(`/game/${game.GameID}`);
+        return;
+      }
 
       if (teamPlay) {
         // Explicit team play: use the two team panels
@@ -226,6 +320,7 @@ export function PlayGamePage() {
             { value: 'Cricket', label: 'Cricket' },
             { value: 'Shanghai', label: 'Shanghai' },
             { value: 'RoundTheWorld', label: 'Round the World' },
+            { value: 'Killer', label: 'Killer' },
           ]}
           value={gameType}
           onChange={e => setGameType(e.target.value as GameType)}
@@ -271,25 +366,137 @@ export function PlayGamePage() {
           />
         )}
 
-        {/* Team Play Toggle */}
-        <div style={{ marginTop: 'var(--spacing-md)' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', cursor: 'pointer', minHeight: 'var(--tap-target)' }}>
-            <input
-              type="checkbox"
-              checked={teamPlay}
-              onChange={e => setTeamPlay(e.target.checked)}
-              style={{ width: 20, height: 20 }}
+        {gameType === 'Killer' && (
+          <>
+            <Select
+              label="Number of Lives"
+              options={[
+                { value: '3', label: '3 Lives' },
+                { value: '5', label: '5 Lives' },
+                { value: '7', label: '7 Lives' },
+              ]}
+              value={killerLives}
+              onChange={e => setKillerLives(e.target.value)}
             />
-            <span style={{ fontWeight: 600 }}>Team Play</span>
-          </label>
-        </div>
+            <div style={{ marginTop: 'var(--spacing-md)' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', cursor: 'pointer', minHeight: 'var(--tap-target)' }}>
+                <input
+                  type="checkbox"
+                  checked={killerImmunity}
+                  onChange={e => setKillerImmunity(e.target.checked)}
+                  style={{ width: 20, height: 20 }}
+                />
+                <span style={{ fontWeight: 600 }}>First Round Immunity</span>
+              </label>
+              <p style={{ margin: '4px 0 0 28px', fontSize: '0.8rem', color: 'var(--color-text-light)' }}>
+                Players cannot be eliminated before they have thrown their first dart.
+              </p>
+            </div>
+          </>
+        )}
+
+        {/* Team Play Toggle — not for Killer */}
+        {gameType !== 'Killer' && (
+          <div style={{ marginTop: 'var(--spacing-md)' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)', cursor: 'pointer', minHeight: 'var(--tap-target)' }}>
+              <input
+                type="checkbox"
+                checked={teamPlay}
+                onChange={e => setTeamPlay(e.target.checked)}
+                style={{ width: 20, height: 20 }}
+              />
+              <span style={{ fontWeight: 600 }}>Team Play</span>
+            </label>
+          </div>
+        )}
       </Card>
 
-      {/* Player Selection Side by Side */}
-      <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', marginBottom: 'var(--spacing-lg)' }}>
-        <PlayerList team="A" label={teamPlay ? 'Team A' : 'Players'} teamData={teamA} />
-        {teamPlay && <PlayerList team="B" label="Team B" teamData={teamB} />}
-      </div>
+      {/* Killer: player list with target number assignment */}
+      {gameType === 'Killer' ? (
+        <Card style={{ marginBottom: 'var(--spacing-lg)' }}>
+          <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: 'var(--spacing-sm)', color: 'var(--color-primary)' }}>
+            Players (min 2)
+          </div>
+          {teamA.players.length === 0 ? (
+            <p style={{ color: 'var(--color-text-light)', fontSize: '0.85rem' }}>No players added yet</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
+              {teamA.players.map((p, i) => {
+                const usedTargets = Object.entries(killerTargets)
+                  .filter(([pid]) => Number(pid) !== p.PlayerID)
+                  .map(([, num]) => num);
+                return (
+                  <div key={p.PlayerID} style={{
+                    display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)',
+                    padding: 'var(--spacing-sm)',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: 'var(--color-surface-hover)',
+                    border: '1px solid var(--color-border)',
+                  }}>
+                    <span style={{ flex: 1, fontWeight: 600 }}>{p.FirstName} {p.LastName}</span>
+                    <select
+                      value={killerTargets[p.PlayerID] || ''}
+                      onChange={e => setKillerTargets(prev => ({
+                        ...prev,
+                        [p.PlayerID]: Number(e.target.value),
+                      }))}
+                      style={{ minHeight: 'var(--tap-target)', minWidth: 70, fontSize: '1rem', fontWeight: 700, textAlign: 'center' }}
+                    >
+                      <option value="">—</option>
+                      {Array.from({ length: 20 }, (_, n) => n + 1)
+                        .filter(n => !usedTargets.includes(n))
+                        .map(n => (
+                          <option key={n} value={n}>{n}</option>
+                        ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        removeFromTeam('A', p.PlayerID);
+                        setKillerTargets(prev => {
+                          const next = { ...prev };
+                          delete next[p.PlayerID];
+                          return next;
+                        });
+                      }}
+                      style={{
+                        background: 'none', border: '1px solid var(--color-danger)', borderRadius: 4,
+                        width: 28, height: 28, cursor: 'pointer', color: 'var(--color-danger)', fontSize: '0.85rem',
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {teamA.players.length < 8 && (
+            <div style={{ marginTop: 'var(--spacing-sm)' }}>
+              <select
+                value=""
+                onChange={e => {
+                  const player = availablePlayers.find(p => p.PlayerID === Number(e.target.value));
+                  if (player) addToTeam('A', player);
+                }}
+                style={{ width: '100%', minHeight: 'var(--tap-target)' }}
+              >
+                <option value="">+ Add Player...</option>
+                {availablePlayers.map(p => (
+                  <option key={p.PlayerID} value={p.PlayerID}>{p.FirstName} {p.LastName}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </Card>
+      ) : (
+        <>
+          {/* Player Selection Side by Side */}
+          <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap', marginBottom: 'var(--spacing-lg)' }}>
+            <PlayerList team="A" label={teamPlay ? 'Team A' : 'Players'} teamData={teamA} />
+            {teamPlay && <PlayerList team="B" label="Team B" teamData={teamB} />}
+          </div>
+        </>
+      )}
 
       {/* Add New Player / Start buttons */}
       <div style={{ display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap' }}>

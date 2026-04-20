@@ -218,3 +218,18 @@ export function announceCricketGameOut(teamName: string): void {
     volume: 1.0,
   });
 }
+
+/** Announce a player becoming a Killer */
+export function announceKiller(playerName: string): void {
+  speak(`${playerName} is now a Killer!`, { rate: 0.95, pitch: 1.15, volume: 1.0 });
+}
+
+/** Announce a player being eliminated in Killer */
+export function announceEliminated(playerName: string): void {
+  speak(`${playerName} has been eliminated!`, { rate: 0.9, pitch: 0.8, volume: 1.0 });
+}
+
+/** Announce the Killer game winner */
+export function announceKillerWinner(playerName: string): void {
+  speak(`Game over! ${playerName} wins!`, { rate: 0.85, pitch: 1.2, volume: 1.0 });
+}

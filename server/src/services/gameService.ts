@@ -9,6 +9,7 @@ export interface CreateGameInput {
   X01Target?: number;
   DoubleInRequired?: boolean;
   RtwMode?: string;
+  KillerLives?: number;
 }
 
 export interface CreateTurnInput {
@@ -109,10 +110,11 @@ export const gameService = {
       .input('doubleIn', sql.Bit, input.DoubleInRequired || false)
       .input('rtwMode', sql.NVarChar(10), input.RtwMode || null)
       .input('rtwSequence', sql.NVarChar(sql.MAX), rtwSequence)
+      .input('killerLives', sql.Int, input.KillerLives || null)
       .query(`
-        INSERT INTO Games (MatchID, GameType, GameNumber, X01Target, DoubleInRequired, RtwMode, RtwSequence)
+        INSERT INTO Games (MatchID, GameType, GameNumber, X01Target, DoubleInRequired, RtwMode, RtwSequence, KillerLives)
         OUTPUT INSERTED.*
-        VALUES (@matchId, @gameType, @gameNumber, @x01Target, @doubleIn, @rtwMode, @rtwSequence)
+        VALUES (@matchId, @gameType, @gameNumber, @x01Target, @doubleIn, @rtwMode, @rtwSequence, @killerLives)
       `);
     const game = result.recordset[0];
 
@@ -786,6 +788,7 @@ export const gameService = {
     X01Target?: number;
     DoubleInRequired?: boolean;
     RtwMode?: string;
+    KillerLives?: number;
     TeamAPlayers: number[];
     TeamBPlayers: number[];
     TeamPlay: boolean;
@@ -918,10 +921,11 @@ export const gameService = {
       .input('doubleIn', sql.Bit, input.DoubleInRequired || false)
       .input('rtwMode', sql.NVarChar(10), input.RtwMode || null)
       .input('rtwSequence', sql.NVarChar(sql.MAX), rtwSequence)
+      .input('killerLives', sql.Int, input.KillerLives || null)
       .query(`
-        INSERT INTO Games (MatchID, GameType, GameNumber, X01Target, DoubleInRequired, RtwMode, RtwSequence, Status)
+        INSERT INTO Games (MatchID, GameType, GameNumber, X01Target, DoubleInRequired, RtwMode, RtwSequence, KillerLives, Status)
         OUTPUT INSERTED.*
-        VALUES (@matchId, @gameType, @gameNumber, @x01Target, @doubleIn, @rtwMode, @rtwSequence, 'InProgress')
+        VALUES (@matchId, @gameType, @gameNumber, @x01Target, @doubleIn, @rtwMode, @rtwSequence, @killerLives, 'InProgress')
       `);
     const game = gameResult.recordset[0];
 

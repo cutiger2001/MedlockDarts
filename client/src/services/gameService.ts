@@ -10,12 +10,14 @@ export const gameService = {
     X01Target?: number;
     DoubleInRequired?: boolean;
     RtwMode?: string;
+    KillerLives?: number;
   }) => api.post<Game>('/games', data),
   createAdHoc: (data: {
     GameType: GameType;
     X01Target?: number;
     DoubleInRequired?: boolean;
     RtwMode?: string;
+    KillerLives?: number;
     TeamAPlayers: number[];
     TeamBPlayers: number[];
     TeamPlay: boolean;

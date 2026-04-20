@@ -23,15 +23,15 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
 // Create game
 router.post('/', asyncHandler(async (req, res) => {
-  const { MatchID, GameType, GameNumber, X01Target, DoubleInRequired, RtwMode } = req.body;
+  const { MatchID, GameType, GameNumber, X01Target, DoubleInRequired, RtwMode, KillerLives } = req.body;
   if (!MatchID || !GameType) throw new AppError(400, 'MatchID and GameType are required');
-  const game = await gameService.create({ MatchID, GameType, GameNumber, X01Target, DoubleInRequired, RtwMode });
+  const game = await gameService.create({ MatchID, GameType, GameNumber, X01Target, DoubleInRequired, RtwMode, KillerLives });
   res.status(201).json(game);
 }));
 
 // Create ad-hoc game (no existing match/season needed)
 router.post('/ad-hoc', asyncHandler(async (req, res) => {
-  const { GameType, X01Target, DoubleInRequired, RtwMode, TeamAPlayers, TeamBPlayers, TeamPlay } = req.body;
+  const { GameType, X01Target, DoubleInRequired, RtwMode, KillerLives, TeamAPlayers, TeamBPlayers, TeamPlay } = req.body;
   if (!GameType) throw new AppError(400, 'GameType is required');
   if (!TeamAPlayers || !Array.isArray(TeamAPlayers) || TeamAPlayers.length === 0) {
     throw new AppError(400, 'At least one player is required for Team A');
@@ -51,7 +51,7 @@ router.post('/ad-hoc', asyncHandler(async (req, res) => {
     }
   }
   const game = await gameService.createAdHoc({
-    GameType, X01Target, DoubleInRequired, RtwMode,
+    GameType, X01Target, DoubleInRequired, RtwMode, KillerLives,
     TeamAPlayers, TeamBPlayers: teamBArr, TeamPlay: TeamPlay || false,
   });
   res.status(201).json(game);

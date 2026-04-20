@@ -75,7 +75,7 @@ export interface Match {
   AwayTeamName?: string;
 }
 
-export type GameType = 'X01' | 'Cricket' | 'Shanghai' | 'RoundTheWorld';
+export type GameType = 'X01' | 'Cricket' | 'Shanghai' | 'RoundTheWorld' | 'Killer';
 
 export interface Game {
   GameID: number;
@@ -86,6 +86,7 @@ export interface Game {
   DoubleInRequired: boolean;
   RtwMode: string | null;
   RtwSequence: string | null;
+  KillerLives: number | null;
   Status: 'NotStarted' | 'InProgress' | 'Completed';
   WinnerTeamSeasonID: number | null;
 }
