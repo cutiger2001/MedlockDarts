@@ -116,19 +116,20 @@ IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Games')
 CREATE TABLE Games (
     GameID              INT IDENTITY(1,1) PRIMARY KEY,
     MatchID             INT             NOT NULL,
-    GameType            NVARCHAR(20)    NOT NULL,     -- 'X01', 'Cricket', 'Shanghai', 'RoundTheWorld'
+    GameType            NVARCHAR(20)    NOT NULL,     -- 'X01', 'Cricket', 'Shanghai', 'RoundTheWorld', 'Killer'
     GameNumber          INT             NOT NULL DEFAULT 1,
     X01Target           INT             NULL,          -- 301, 501, etc.
     DoubleInRequired    BIT             NOT NULL DEFAULT 0,
     RtwMode             NVARCHAR(10)    NULL,          -- '1to20', '20to1', 'Random'
     RtwSequence         NVARCHAR(MAX)   NULL,          -- JSON array for random order
+    KillerLives         INT             NULL,          -- Number of lives for Killer mode
     Status              NVARCHAR(20)    NOT NULL DEFAULT 'NotStarted', -- NotStarted, InProgress, Completed
     WinnerTeamSeasonID  INT             NULL,
     CreatedAt           DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME(),
     UpdatedAt           DATETIME2       NOT NULL DEFAULT SYSUTCDATETIME(),
     CONSTRAINT FK_Games_Match FOREIGN KEY (MatchID) REFERENCES Matches(MatchID),
     CONSTRAINT FK_Games_Winner FOREIGN KEY (WinnerTeamSeasonID) REFERENCES TeamSeasons(TeamSeasonID),
-    CONSTRAINT CK_Games_Type CHECK (GameType IN ('X01', 'Cricket', 'Shanghai', 'RoundTheWorld'))
+    CONSTRAINT CK_Games_Type CHECK (GameType IN ('X01', 'Cricket', 'Shanghai', 'RoundTheWorld', 'Killer'))
 );
 GO
 
