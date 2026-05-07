@@ -21,7 +21,8 @@
 param(
     [string]$DbPassword = "180Allday!",
     [switch]$SkipSqlInstall,
-    [switch]$SkipNodeInstall
+    [switch]$SkipNodeInstall,
+    [switch]$SkipCertCheck   # Use when corporate SSL inspection breaks downloads
 )
 
 # ── Strict mode ──────────────────────────────────────────────────────
@@ -121,6 +122,24 @@ Write-Banner $AppName
 Write-Host "  Installer v1.0" -ForegroundColor DarkGray
 Write-Host "  App directory: $AppDir" -ForegroundColor DarkGray
 
+# ── SSL certificate handling ─────────────────────────────────────────
+if ($SkipCertCheck) {
+    Write-Warn "SSL certificate verification disabled (-SkipCertCheck)."
+    # Allow PowerShell Invoke-WebRequest to skip cert validation
+    if (-not ([System.Management.Automation.PSTypeName]'TrustAllCerts').Type) {
+        Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCerts : ICertificatePolicy {
+    public bool CheckValidationResult(ServicePoint sp, X509Certificate cert,
+        WebRequest req, int problem) { return true; }
+}
+"@
+    }
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCerts
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+}
+
 # ── Check admin ──────────────────────────────────────────────────────
 if (-not (Test-Admin)) {
     Write-Fail "This installer must be run as Administrator."
@@ -165,7 +184,8 @@ if (Test-SqlExpressInstalled) {
     $sqlSetup = Join-Path $TempDir "SQL2022-SSEI-Expr.exe"
     if (-not (Test-Path $sqlSetup)) {
         try {
-            Invoke-WebRequest -Uri $SqlExpressUrl -OutFile $sqlSetup -UseBasicParsing
+            Invoke-WebRequest -Uri $SqlExpressUrl -OutFile $sqlSetup -UseBasicParsing `
+                $(if ($SkipCertCheck) { '-SkipCertificateCheck' })
         } catch {
             Write-Fail "Failed to download SQL Server Express installer."
             Write-Host "      Please download manually from:" -ForegroundColor Gray
@@ -266,7 +286,8 @@ if (Test-NodeInstalled) {
     $nodeMsi = Join-Path $TempDir "node-v$NodeVersion-x64.msi"
     if (-not (Test-Path $nodeMsi)) {
         try {
-            Invoke-WebRequest -Uri $NodeUrl -OutFile $nodeMsi -UseBasicParsing
+            Invoke-WebRequest -Uri $NodeUrl -OutFile $nodeMsi -UseBasicParsing `
+                $(if ($SkipCertCheck) { '-SkipCertificateCheck' })
         } catch {
             Write-Fail "Failed to download Node.js installer."
             Write-Host "      Please install Node.js 20+ from https://nodejs.org and re-run with -SkipNodeInstall" -ForegroundColor Gray
@@ -492,6 +513,10 @@ Push-Location $AppDir
 $buildLog = Join-Path $TempDir "build.log"
 
 Write-Host "      Installing npm dependencies (this may take a minute)..." -ForegroundColor Gray
+if ($SkipCertCheck) {
+    Write-Warn "Disabling npm strict-ssl for this install."
+    & npm config set strict-ssl false 2>&1 | Out-Null
+}
 $installOutput = cmd /c "npm run install:all 2>&1"
 $installOutput | Out-File -FilePath $buildLog -Encoding UTF8
 if ($LASTEXITCODE -ne 0) {
@@ -503,6 +528,9 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-OK "Dependencies installed"
+if ($SkipCertCheck) {
+    & npm config set strict-ssl true 2>&1 | Out-Null   # restore default after install
+}
 
 Write-Host "      Building client (Vite production build)..." -ForegroundColor Gray
 $clientOutput = cmd /c "npm run build:client 2>&1"
