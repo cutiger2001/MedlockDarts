@@ -674,7 +674,7 @@ if (-not (Test-Path $excelPath)) {
         }
 
         Write-Host "      Running import-history.js (this may take a minute)..." -ForegroundColor Gray
-        $importOutput = cmd /c "node scripts\import-history.js 2>&1"
+        $importOutput = & node scripts\import-history.js 2>&1
         if ($LASTEXITCODE -eq 0) {
             Write-OK "Historical seasons imported successfully"
             $importOutput | Select-Object -Last 5 | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
@@ -691,7 +691,7 @@ if (-not (Test-Path $excelPath)) {
 
         if ($simChoice -match '^[Yy]') {
             Write-Host "      Running simulate-summer.js..." -ForegroundColor Gray
-            $simOutput = cmd /c "node scripts\simulate-summer.js 2>&1"
+            $simOutput = & node scripts\simulate-summer.js 2>&1
             if ($LASTEXITCODE -eq 0) {
                 Write-OK "Summer 2026 simulation complete"
                 $simOutput | Select-Object -Last 5 | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
