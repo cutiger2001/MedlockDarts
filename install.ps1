@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Medlock Bridge Darts League — Windows Installer
 .DESCRIPTION
