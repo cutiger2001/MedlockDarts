@@ -30,7 +30,7 @@ export function Select({ label, options, error, id, style, ...props }: SelectPro
         ))}
       </select>
       {error && (
-        <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: '4px' }}>
+        <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: 'var(--spacing-xs)' }}>
           {error}
         </p>
       )}

@@ -50,8 +50,8 @@ export function Header() {
               setAudioEnabled(next);
             }}
             style={{
-              minWidth: 40,
-              minHeight: 40,
+              minWidth: 'var(--tap-target)',
+              minHeight: 'var(--tap-target)',
               borderRadius: 'var(--radius-sm)',
               border: '1px solid rgba(255,255,255,0.3)',
               background: 'rgba(255,255,255,0.15)',

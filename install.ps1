@@ -352,13 +352,13 @@ if ($useSqlCmd) {
     
     $adminAuth = $null
     # Try Windows Auth first (most likely to work on fresh Express install)
-    $testResult = & $sqlcmd -S $serverConn -E -Q "SELECT 1" 2>&1
+    $testResult = & $sqlcmd -N o -S $serverConn -E -Q "SELECT 1" 2>&1
     if ($LASTEXITCODE -eq 0) {
         $adminAuth = "windows"
         Write-OK "Connected via Windows Authentication"
     } else {
         # Try SA with the provided password
-        $testResult = & $sqlcmd -S $serverConn -U sa -P $DbPassword -Q "SELECT 1" 2>&1
+        $testResult = & $sqlcmd -N o -S $serverConn -U sa -P $DbPassword -Q "SELECT 1" 2>&1
         if ($LASTEXITCODE -eq 0) {
             $adminAuth = "sa"
             Write-OK "Connected via SA Authentication"
@@ -394,7 +394,7 @@ if ($useSqlCmd) {
         if ($Database) { $args += @("-d", $Database) }
         if ($InputFile) { $args += @("-i", $InputFile) }
         if ($Query) { $args += @("-Q", $Query) }
-        return & $sqlcmd @args 2>&1
+        return & $sqlcmd -N o @args 2>&1
     }
 
     # Enable Mixed Mode auth if using Windows Auth
@@ -473,7 +473,7 @@ GO
 
     # Verify DartsAdmin can connect
     Write-Host "      Verifying '$DbUser' login works..." -ForegroundColor Gray
-    $verifyResult = & $sqlcmd -S $serverConn -U $DbUser -P $DbPassword -d $DbName -Q "SELECT 1" 2>&1
+    $verifyResult = & $sqlcmd -N o -S $serverConn -U $DbUser -P $DbPassword -d $DbName -Q "SELECT 1" 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Login '$DbUser' cannot connect to '$DbName'"
         Write-Host "      $verifyResult" -ForegroundColor Red
@@ -495,7 +495,7 @@ GO
 
     foreach ($file in $schemaFiles) {
         Write-Host "        -> $($file.Name)" -ForegroundColor DarkGray
-        $result = & $sqlcmd -S $serverConn -U $DbUser -P $DbPassword -d $DbName -i $file.FullName 2>&1
+        $result = & $sqlcmd -N o -S $serverConn -U $DbUser -P $DbPassword -d $DbName -i $file.FullName 2>&1
         if ($LASTEXITCODE -ne 0) {
             Write-Warn "Migration $($file.Name) had issues (may be already applied)"
         }

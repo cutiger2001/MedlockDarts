@@ -600,16 +600,15 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
         }}>
         {/* Home team */}
         <Card style={{
-          textAlign: 'center', backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)', padding: 'var(--spacing-sm) var(--spacing-md)',
-          outline: !disabled && currentPlayer?.TeamSeasonID === homeTeamId ? '3px solid #FFD700' : 'none',
+          textAlign: 'center', backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
+          padding: 'var(--spacing-md) var(--spacing-sm)',
+          outline: 'none',
           outlineOffset: 2,
+          minHeight: 140,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <div style={{ fontSize: '0.8rem', opacity: 0.8, whiteSpace: 'nowrap' }}>{getShortTeamLabel(homePlayers)}</div>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1.1, margin: '2px 0' }}>
+          <div style={{ fontSize: 'clamp(5rem, 14vw, 9rem)', fontWeight: 900, lineHeight: 1 }}>
             {teamScores[homeTeamId]?.remaining ?? target}
-          </div>
-          <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>
-            Avg: {getTeamAverage(homePlayers).toFixed(1)}
           </div>
         </Card>
 
@@ -637,16 +636,15 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
 
         {/* Away team */}
         <Card style={{
-          textAlign: 'center', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)', padding: 'var(--spacing-sm) var(--spacing-md)',
-          outline: !disabled && currentPlayer?.TeamSeasonID === awayTeamId ? '3px solid #FFD700' : 'none',
+          textAlign: 'center', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
+          padding: 'var(--spacing-md) var(--spacing-sm)',
+          outline: 'none',
           outlineOffset: 2,
+          minHeight: 140,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <div style={{ fontSize: '0.8rem', opacity: 0.8, whiteSpace: 'nowrap' }}>{getShortTeamLabel(awayPlayers)}</div>
-          <div style={{ fontSize: '2.5rem', fontWeight: 700, lineHeight: 1.1, margin: '2px 0' }}>
+          <div style={{ fontSize: 'clamp(5rem, 14vw, 9rem)', fontWeight: 900, lineHeight: 1 }}>
             {teamScores[awayTeamId]?.remaining ?? target}
-          </div>
-          <div style={{ fontSize: '0.7rem', opacity: 0.8 }}>
-            Avg: {getTeamAverage(awayPlayers).toFixed(1)}
           </div>
         </Card>
       </div>
@@ -659,44 +657,56 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
         const bgColor = currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)';
         return (
           <Card style={{
-            marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-sm) var(--spacing-md)',
+            marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-lg) var(--spacing-md)',
             border: `3px solid ${currentTeamColor}`, backgroundColor: bgColor,
+            minHeight: 90,
+            display: 'flex', flexDirection: 'column', justifyContent: 'center',
           }}>
-            {/* Now Throwing row */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
-              <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={32} themeColor={currentPlayer.ThemeColor} />
-              <span style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
-                {currentPlayer.FirstName} {currentPlayer.LastName}
-              </span>
-              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
-                — Avg: {getPlayerAverage(currentPlayer.PlayerID).toFixed(1)}
-              </span>
-              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
-                — Now Throwing
-              </span>
-              {doubleInRequired && !hasDoubledIn && (
-                <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)', fontWeight: 700 }}>
-                  (Needs Double In)
-                </span>
-              )}
-            </div>
-            {/* Checkout darts (merged into Now Throwing bar) */}
-            {checkout && (
-              <div style={{ marginTop: 'var(--spacing-xs)', textAlign: 'center' }}>
-                <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.7)', marginBottom: 2 }}>
-                  Checkout ({remaining})
+            {/* Now Throwing row — name shrinks when checkout is shown */}
+            {(() => {
+              const fullName = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+              const nameLen = fullName.length;
+              const hasCheckout = !!checkout;
+              const nameFontSize = hasCheckout
+                ? (nameLen <= 14 ? '1.6rem' : '1.3rem')
+                : (nameLen <= 10 ? '3.2rem' : nameLen <= 14 ? '2.8rem' : nameLen <= 18 ? '2.4rem' : '2rem');
+              const avgFontSize = hasCheckout ? '1.1rem' : (nameLen <= 10 ? '1.6rem' : nameLen <= 14 ? '1.4rem' : '1.2rem');
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-md)', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                  <PlayerAvatar imageData={currentPlayer.ImageData} name={fullName} size={hasCheckout ? 44 : 64} themeColor={currentPlayer.ThemeColor} style={{ flexShrink: 0 }} />
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4em', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                    <span style={{ fontSize: nameFontSize, fontWeight: 900, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                      {fullName}
+                    </span>
+                    <span style={{ fontSize: avgFontSize, fontWeight: 600, color: 'rgba(255,255,255,0.8)', whiteSpace: 'nowrap' }}>
+                      {getPlayerAverage(currentPlayer.PlayerID).toFixed(1)}
+                    </span>
+                    {doubleInRequired && !hasDoubledIn && (
+                      <span style={{ fontSize: '1rem', color: 'var(--color-warning)', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        Needs Double In
+                      </span>
+                    )}
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--spacing-xs)' }}>
+              );
+            })()}
+            {/* Checkout darts */}
+            {checkout && (
+              <div style={{ marginTop: 'var(--spacing-sm)', textAlign: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 'var(--spacing-sm)' }}>
                   {checkout.map((dart, i) => (
                     <div key={i} style={{
-                      padding: '4px 10px',
-                      borderRadius: 'var(--radius-sm)',
-                      backgroundColor: dart.startsWith('D') ? 'rgba(255,255,255,0.25)' :
-                        dart.startsWith('T') ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.1)',
+                      minWidth: 72,
+                      padding: '10px 16px',
+                      borderRadius: 'var(--radius-md)',
+                      backgroundColor: dart.startsWith('D') ? 'rgba(255,255,255,0.3)' :
+                        dart.startsWith('T') ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.1)',
                       color: '#fff',
-                      fontWeight: 700,
-                      fontSize: '1rem',
-                      border: dart.startsWith('D') ? '1px solid rgba(255,255,255,0.5)' : '1px solid rgba(255,255,255,0.2)',
+                      fontWeight: 800,
+                      fontSize: '2rem',
+                      textAlign: 'center',
+                      border: dart.startsWith('D') ? '2px solid rgba(255,255,255,0.7)' : '1px solid rgba(255,255,255,0.3)',
+                      lineHeight: 1,
                     }}>
                       {dart}
                     </div>
@@ -879,102 +889,85 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       {/* ===== Turn Scoring Mode (Numpad) ===== */}
       {!disabled && scoringMode === 'turn' && (
         <>
-          <Card style={{ marginBottom: 'var(--spacing-md)' }}>
-            {/* Turn input display */}
-            <div style={{ textAlign: 'center', marginBottom: 'var(--spacing-md)' }}>
-              <div style={{
-                fontSize: '2.5rem', fontWeight: 700, minHeight: 60,
-                padding: 'var(--spacing-sm)',
-                border: `3px solid ${currentTeamColor}`,
-                borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--color-surface)',
-              }}>
-                {turnInput || '0'}
-              </div>
-              <div style={{ fontSize: '0.85rem', color: 'var(--color-text-light)', marginTop: 4 }}>
-                Remaining after: {(currentTeamScore?.remaining || target) - (Number(turnInput) || 0)}
-              </div>
-            </div>
+          <Card style={{ marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-sm)' }}>
+            {/* 3-column layout: left hot scores | numpad | right hot scores */}
+            {(() => {
+              const half = Math.ceil(settings.fastEntryScores.length / 2);
+              const leftScores = settings.fastEntryScores.slice(0, half);
+              const rightScores = settings.fastEntryScores.slice(half);
+              const sideBtn: React.CSSProperties = {
+                minHeight: 56, fontWeight: 800, fontSize: '1rem',
+                border: '1px solid var(--color-border)',
+                padding: '4px 2px', width: '100%',
+              };
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 72px', gap: 'var(--spacing-xs)' }}>
+                  {/* Left column: first half of hot scores */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
+                    {leftScores.map(s => (
+                      <Button key={s} variant="ghost" onClick={() => submitTurnScore(s)} style={sideBtn}>{s}</Button>
+                    ))}
+                  </div>
 
-            {/* Fast entry buttons */}
-            <div style={{
-              display: 'flex', gap: 'var(--spacing-xs)', flexWrap: 'wrap',
-              justifyContent: 'center', marginBottom: 'var(--spacing-md)',
-            }}>
-              {settings.fastEntryScores.map(s => (
-                <Button
-                  key={s}
-                  variant="ghost"
-                  onClick={() => submitTurnScore(s)}
-                  style={{
-                    minWidth: 60, minHeight: 48, fontWeight: 700, fontSize: '1rem',
-                    border: '1px solid var(--color-border)',
-                  }}
-                >
-                  {s}
-                </Button>
-              ))}
-              <Button
-                variant="ghost"
-                onClick={() => submitTurnScore(Number(turnInput) || 0, undefined, true)}
-                style={{
-                  minWidth: 72, minHeight: 48, fontWeight: 700, fontSize: '1rem',
-                  border: '1px solid var(--color-danger)', color: 'var(--color-danger)',
-                }}
-              >
-                BUST
-              </Button>
-            </div>
+                  {/* Center: numpad */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--spacing-xs)' }}>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+                      <Button key={n} size="lg" variant="ghost" onClick={() => handleNumpad(String(n))}
+                        style={{ minHeight: 62, fontSize: '1.5rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
+                        {n}
+                      </Button>
+                    ))}
+                    <Button size="lg" variant="ghost" onClick={() => handleNumpad('C')}
+                      style={{ minHeight: 62, fontSize: '1rem', fontWeight: 700, border: '1px solid var(--color-border)', color: 'var(--color-danger)' }}>
+                      CLR
+                    </Button>
+                    <Button size="lg" variant="ghost" onClick={() => handleNumpad('0')}
+                      style={{ minHeight: 62, fontSize: '1.5rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
+                      0
+                    </Button>
+                    <Button size="lg" variant="ghost" onClick={() => handleNumpad('BS')}
+                      style={{ minHeight: 62, fontSize: '1.1rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
+                      ⌫
+                    </Button>
+                  </div>
 
-            {/* Numpad */}
-            <div style={{
-              display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-              gap: 'var(--spacing-xs)', maxWidth: 300, margin: '0 auto',
-            }}>
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
-                <Button
-                  key={n}
-                  size="lg"
-                  variant="ghost"
-                  onClick={() => handleNumpad(String(n))}
-                  style={{ minHeight: 56, fontSize: '1.3rem', fontWeight: 700, border: '1px solid var(--color-border)' }}
-                >
-                  {n}
-                </Button>
-              ))}
-              <Button
-                size="lg"
-                variant="ghost"
-                onClick={() => handleNumpad('C')}
-                style={{ minHeight: 56, fontSize: '1rem', fontWeight: 700, border: '1px solid var(--color-border)', color: 'var(--color-danger)' }}
-              >
-                CLR
-              </Button>
-              <Button
-                size="lg"
-                variant="ghost"
-                onClick={() => handleNumpad('0')}
-                style={{ minHeight: 56, fontSize: '1.3rem', fontWeight: 700, border: '1px solid var(--color-border)' }}
-              >
-                0
-              </Button>
-              <Button
-                size="lg"
-                variant="ghost"
-                onClick={() => handleNumpad('BS')}
-                style={{ minHeight: 56, fontSize: '1rem', fontWeight: 700, border: '1px solid var(--color-border)' }}
-              >
-                ⌫
-              </Button>
-            </div>
+                  {/* Right column: second half of hot scores + BUST */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
+                    {rightScores.map(s => (
+                      <Button key={s} variant="ghost" onClick={() => submitTurnScore(s)} style={sideBtn}>{s}</Button>
+                    ))}
+                    <Button variant="ghost"
+                      onClick={() => submitTurnScore(Number(turnInput) || 0, undefined, true)}
+                      style={{ ...sideBtn, border: '1px solid var(--color-danger)', color: 'var(--color-danger)' }}>
+                      BUST
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
 
-            {/* Submit button */}
-            <Button
+            {/* Submit button — large, shows score prominently */}
+            <button
               onClick={() => submitTurnScore(Number(turnInput) || 0)}
-              style={{ width: '100%', marginTop: 'var(--spacing-md)', minHeight: 56, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
+              style={{
+                width: '100%', marginTop: 'var(--spacing-sm)',
+                minHeight: 88,
+                background: 'var(--color-success)',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 'var(--radius-md)',
+                cursor: 'pointer',
+                display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center',
+                gap: 2,
+                boxShadow: 'var(--shadow-md)',
+              }}
             >
-              Submit Turn ({turnInput || '0'})
-            </Button>
+              <span style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{turnInput || '0'}</span>
+              <span style={{ fontSize: '0.95rem', fontWeight: 600, opacity: 0.9 }}>
+                Submit Turn &nbsp;·&nbsp; Left: {(currentTeamScore?.remaining || target) - (Number(turnInput) || 0)}
+              </span>
+            </button>
           </Card>
 
           {/* ===== Darts Prompt (on game-out) — overlay ===== */}

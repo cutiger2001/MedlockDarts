@@ -69,10 +69,35 @@ function isPossibleCricketMarkState(marks: Record<string, number>): boolean {
 /* ------------------------------------------------------------------ */
 
 function renderMarks(count: number): React.ReactNode {
-  if (count === 0) return <span style={{ opacity: 0.3 }}>·</span>;
-  if (count === 1) return <span style={{ fontWeight: 700 }}>/</span>;
-  if (count === 2) return <span style={{ fontWeight: 700 }}>X</span>;
-  if (count >= 3) return <span style={{ fontWeight: 700 }}>⊗</span>;
+  const size = 'clamp(36px, 6.5vw, 52px)';
+  const svg = {
+    width: size, height: size, viewBox: '0 0 40 40',
+    style: { display: 'block', margin: '0 auto' } as React.CSSProperties,
+  };
+  const stroke = { stroke: 'currentColor', strokeWidth: 4.5, strokeLinecap: 'round' as const, fill: 'none' };
+
+  if (count === 0) return <span style={{ opacity: 0.2 }}>·</span>;
+  if (count === 1) return (
+    // Slash
+    <svg {...svg}>
+      <line {...stroke} x1="11" y1="34" x2="29" y2="6" />
+    </svg>
+  );
+  if (count === 2) return (
+    // X
+    <svg {...svg}>
+      <line {...stroke} x1="10" y1="6" x2="30" y2="34" />
+      <line {...stroke} x1="30" y1="6" x2="10" y2="34" />
+    </svg>
+  );
+  if (count >= 3) return (
+    // Circled X
+    <svg {...svg}>
+      <circle {...stroke} cx="20" cy="20" r="16" />
+      <line {...stroke} x1="13" y1="13" x2="27" y2="27" />
+      <line {...stroke} x1="27" y1="13" x2="13" y2="27" />
+    </svg>
+  );
   return null;
 }
 
@@ -258,6 +283,23 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
     });
   }, []);
 
+  /* --- Add N marks to a segment (D=2, T=3) --- */
+  const handleTapN = useCallback((seg: string, n: number) => {
+    const maxAllowed = getMaxTapsForSeg(seg);
+    const actual = Math.min(n, maxAllowed);
+    if (actual <= 0) return;
+    setTurnMarks(prev => ({ ...prev, [seg]: (prev[seg] || 0) + actual }));
+  }, [getMaxTapsForSeg]);
+
+  /* --- Clear all marks for a segment --- */
+  const handleClearSeg = useCallback((seg: string) => {
+    setTurnMarks(prev => {
+      const next = { ...prev };
+      delete next[seg];
+      return next;
+    });
+  }, [])
+
   /* --- Team colors for current player --- */
   const currentPlayerColor = currentPlayer?.ThemeColor || null;
   const currentTeamColor = currentPlayerColor
@@ -441,47 +483,86 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         </div>
       )}
 
-      {/* ===== Cricket Board (3-column: Home | Segment | Away) ===== */}
-      <Card style={{ marginBottom: 'var(--spacing-lg)', padding: 0, overflow: 'hidden' }}>
+      {/* ===== Score Header + Now Throwing (unified rounded container) ===== */}
+      <div style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', marginBottom: 'var(--spacing-xs)' }}>
+        {/* Scores side-by-side */}
+        <div style={{ display: 'flex' }}>
+        <div style={{
+          flex: 1, padding: '12px 8px', textAlign: 'center',
+          backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
+        }}>
+          <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.HomeTeamName}</div>
+          <div style={{ fontSize: 'clamp(2.8rem, 8vw, 4.5rem)', fontWeight: 900, lineHeight: 1 }}>
+            {(homeState?.Points || 0) + (currentPlayer?.TeamSeasonID === homeTeamId ? turnPreview.totalPoints : 0)}
+          </div>
+        </div>
+        <div style={{
+          flex: 1, padding: '12px 8px', textAlign: 'center',
+          backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
+        }}>
+          <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.AwayTeamName}</div>
+          <div style={{ fontSize: 'clamp(2.8rem, 8vw, 4.5rem)', fontWeight: 900, lineHeight: 1 }}>
+            {(awayState?.Points || 0) + (currentPlayer?.TeamSeasonID === awayTeamId ? turnPreview.totalPoints : 0)}
+          </div>
+        </div>
+        </div>
+
+        {/* ===== Now Throwing (below scores, inside same rounded container) ===== */}
+        {currentPlayer && !disabled && (() => {
+          const fullName = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
+          const nameLen = fullName.length;
+          const nameFontSize = nameLen <= 10 ? '2.4rem' : nameLen <= 14 ? '2.1rem' : nameLen <= 18 ? '1.8rem' : '1.5rem';
+          const mprFontSize = nameLen <= 10 ? '1.2rem' : nameLen <= 14 ? '1.05rem' : '0.9rem';
+          return (
+            <div style={{
+              padding: 'var(--spacing-sm) var(--spacing-md)',
+              borderTop: `3px solid ${currentTeamColor}`,
+              backgroundColor: currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)',
+              display: 'flex', flexDirection: 'column', justifyContent: 'center',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                <PlayerAvatar imageData={currentPlayer.ImageData} name={fullName} size={42} themeColor={currentPlayer.ThemeColor} style={{ flexShrink: 0 }} />
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4em', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                  <span style={{ fontSize: nameFontSize, fontWeight: 900, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                    {fullName}
+                  </span>
+                  <span style={{ fontSize: mprFontSize, fontWeight: 600, color: 'rgba(255,255,255,0.8)', whiteSpace: 'nowrap' }}>
+                    {getPlayerMPR(currentPlayer.PlayerID).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* ===== Cricket Board (Home marks | − D # T ✕ | Away marks) ===== */}
+      <Card style={{ marginBottom: 'var(--spacing-md)', padding: 0, overflow: 'hidden' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)' }}>
-              <th style={{ padding: '10px', textAlign: 'center', width: '35%', boxShadow: isHomeActive ? 'inset 0 0 0 3px #FFD700' : 'none' }}>
-                {match.HomeTeamName}
-                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
-                  {(homeState?.Points || 0) + (currentPlayer?.TeamSeasonID === homeTeamId ? turnPreview.totalPoints : 0)}
-                </div>
-                <div style={{ fontSize: '0.65rem', opacity: 0.8 }}>
-                  MPR: {getTeamMPR(homeTeamId).toFixed(2)}
-                </div>
-              </th>
-              <th style={{ padding: '10px', textAlign: 'center', width: '30%' }}>
-                <div style={{ fontSize: '0.8rem' }}>Segment</div>
-                <div style={{ fontSize: '0.65rem', opacity: 0.7 }}>Tap to mark</div>
-              </th>
-              <th style={{ padding: '10px', textAlign: 'center', width: '35%', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)', boxShadow: isAwayActive ? 'inset 0 0 0 3px #FFD700' : 'none' }}>
-                {match.AwayTeamName}
-                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
-                  {(awayState?.Points || 0) + (currentPlayer?.TeamSeasonID === awayTeamId ? turnPreview.totalPoints : 0)}
-                </div>
-                <div style={{ fontSize: '0.65rem', opacity: 0.8 }}>
-                  MPR: {getTeamMPR(awayTeamId).toFixed(2)}
-                </div>
-              </th>
-            </tr>
-          </thead>
           <tbody>
             {CRICKET_SEGMENTS.map(seg => {
               const hm = getMarks(homeState, seg);
               const am = getMarks(awayState, seg);
               const bothClosed = isBothClosed(seg);
               const tapCount = turnMarks[seg] || 0;
-              const canTap = !disabled && !bothClosed && totalTaps < MAX_TAPS_PER_TURN && getMaxTapsForSeg(seg) > 0;
-
-              // Live preview: show what the marks WILL be after completing turn
+              const maxTaps = !disabled ? getMaxTapsForSeg(seg) : 0;
+              const canTap = !disabled && !bothClosed && maxTaps > 0;
               const isCurrentTeamHome = currentPlayer?.TeamSeasonID === homeTeamId;
               const liveHomeMarks = isCurrentTeamHome ? Math.min(hm + tapCount, 9) : hm;
               const liveAwayMarks = !isCurrentTeamHome ? Math.min(am + tapCount, 9) : am;
+
+              const hotBtnStyle: React.CSSProperties = {
+                minWidth: 48, minHeight: 54, fontWeight: 800, fontSize: '1.25rem',
+                borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                userSelect: 'none', WebkitUserSelect: 'none' as any,
+              };
+              const adjBtnStyle: React.CSSProperties = {
+                width: 40, height: 54, borderRadius: 'var(--radius-sm)',
+                border: 'none', fontWeight: 900, fontSize: '1.3rem',
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              };
 
               return (
                 <tr key={seg} style={{
@@ -490,52 +571,71 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                   backgroundColor: bothClosed ? 'var(--color-surface-hover)' : undefined,
                 }}>
                   {/* Home marks */}
-                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '2rem' }}>
+                  <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle', width: '25%' }}>
                     {renderMarks(isCurrentTeamHome ? liveHomeMarks : hm)}
-                    {isCurrentTeamHome && tapCount > 0 && (
-                      <span style={{ fontSize: '0.75rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
-                    )}
                   </td>
 
-                  {/* Segment (tappable) */}
-                  <td
-                    onClick={() => canTap && handleTap(seg)}
-                    style={{
-                      padding: '12px 10px', textAlign: 'center', fontWeight: 700, fontSize: '1.5rem',
-                      color: bothClosed ? 'var(--color-text-light)' : 'var(--color-primary)',
-                      cursor: canTap ? 'pointer' : 'default',
-                      userSelect: 'none',
-                      WebkitUserSelect: 'none',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                      {tapCount > 0 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleUntap(seg); }}
-                          style={{
-                            width: 24, height: 24, border: '1px solid var(--color-danger)',
-                            borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-danger)',
-                            color: '#fff', fontWeight: 700, fontSize: '0.85rem', cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          −
-                        </button>
-                      )}
-                      <span>{seg}</span>
-                      {tapCount > 0 && (
-                        <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)', minWidth: 24, textAlign: 'center' }}>+{tapCount}</span>
-                      )}
+                  {/* Center: − | D | # | T | ✕ */}
+                  <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle', width: '50%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+                      {/* − button (only when tapped) */}
+                      <button onClick={() => tapCount > 0 && handleUntap(seg)} style={{
+                        ...adjBtnStyle,
+                        backgroundColor: tapCount > 0 ? 'var(--color-danger)' : 'transparent',
+                        color: tapCount > 0 ? '#fff' : 'transparent',
+                        border: tapCount > 0 ? 'none' : '1px solid transparent',
+                        cursor: tapCount > 0 ? 'pointer' : 'default',
+                      }}>−</button>
+
+                      {/* D = 2 marks */}
+                      <button onClick={() => canTap && handleTapN(seg, 2)} style={{
+                        ...hotBtnStyle,
+                        backgroundColor: canTap ? 'var(--color-surface)' : 'transparent',
+                        color: canTap ? 'var(--color-primary)' : 'var(--color-text-light)',
+                        cursor: canTap ? 'pointer' : 'default',
+                        opacity: canTap ? 1 : 0.35,
+                        border: canTap ? '1px solid var(--color-primary)' : '1px solid var(--color-border)',
+                      }}>D</button>
+
+                      {/* Single tap — number */}
+                      <button onClick={() => canTap && handleTap(seg)} style={{
+                        ...hotBtnStyle,
+                        minWidth: 60, fontSize: 'clamp(1.4rem, 3.5vw, 1.9rem)',
+                        border: `2px solid ${canTap ? 'var(--color-primary)' : 'var(--color-border)'}`,
+                        backgroundColor: tapCount > 0 ? 'var(--color-primary)' : 'var(--color-surface)',
+                        color: tapCount > 0 ? '#fff' : (canTap ? 'var(--color-primary)' : 'var(--color-text-light)'),
+                        cursor: canTap ? 'pointer' : 'default',
+                        flexDirection: 'column', gap: 0,
+                      }}>
+                        <span>{seg}</span>
+                        {tapCount > 0 && <span style={{ fontSize: '0.5em', lineHeight: 1.2, opacity: 0.9 }}>+{tapCount}</span>}
+                      </button>
+
+                      {/* T = 3 marks */}
+                      <button onClick={() => canTap && seg !== 'Bull' && handleTapN(seg, 3)} style={{
+                        ...hotBtnStyle,
+                        backgroundColor: (canTap && seg !== 'Bull') ? 'var(--color-surface)' : 'transparent',
+                        color: (canTap && seg !== 'Bull') ? 'var(--color-secondary)' : 'var(--color-text-light)',
+                        cursor: (canTap && seg !== 'Bull') ? 'pointer' : 'default',
+                        opacity: (canTap && seg !== 'Bull') ? 1 : 0.35,
+                        border: (canTap && seg !== 'Bull') ? '1px solid var(--color-secondary)' : '1px solid var(--color-border)',
+                      }}>T</button>
+
+                      {/* ✕ button (only when tapped) */}
+                      <button onClick={() => tapCount > 0 && handleClearSeg(seg)} style={{
+                        ...adjBtnStyle,
+                        backgroundColor: tapCount > 0 ? 'var(--color-danger)' : 'transparent',
+                        color: tapCount > 0 ? '#fff' : 'transparent',
+                        border: tapCount > 0 ? 'none' : '1px solid transparent',
+                        cursor: tapCount > 0 ? 'pointer' : 'default',
+                        fontSize: '1.1rem',
+                      }}>✕</button>
                     </div>
                   </td>
 
                   {/* Away marks */}
-                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '2rem' }}>
+                  <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle', width: '25%' }}>
                     {renderMarks(!isCurrentTeamHome ? liveAwayMarks : am)}
-                    {!isCurrentTeamHome && tapCount > 0 && (
-                      <span style={{ fontSize: '0.75rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
-                    )}
                   </td>
                 </tr>
               );
@@ -544,7 +644,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         </table>
       </Card>
 
-      {/* ===== Complete Turn / Undo Buttons (ABOVE now throwing) ===== */}
+      {/* ===== Complete Turn / Undo Buttons ===== */}
       {!disabled && (
         <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}>
           {(Object.values(turnMarks).some(v => v > 0) || cricketTurns.length > 0) && (
@@ -559,36 +659,6 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
             Complete Turn {totalTaps > 0 ? `(${turnPreview.totalMarks} marks)` : '(No Score)'}
           </Button>
         </div>
-      )}
-
-      {/* ===== Now Throwing (below buttons) ===== */}
-      {currentPlayer && !disabled && (
-        <Card style={{
-          marginBottom: 'var(--spacing-md)', padding: 'var(--spacing-sm) var(--spacing-md)',
-          border: `3px solid ${currentTeamColor}`,
-          backgroundColor: currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
-            <PlayerAvatar imageData={currentPlayer.ImageData} name={`${currentPlayer.FirstName} ${currentPlayer.LastName}`} size={32} themeColor={currentPlayer.ThemeColor} />
-            <span style={{ fontSize: '1rem', fontWeight: 700, color: '#fff' }}>
-              {currentPlayer.FirstName} {currentPlayer.LastName}
-            </span>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
-              — MPR: {getPlayerMPR(currentPlayer.PlayerID).toFixed(2)}
-            </span>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'rgba(255,255,255,0.8)' }}>
-              — Now Throwing — Rd {currentRound}
-            </span>
-          </div>
-          <div style={{ textAlign: 'center', marginTop: 4, fontSize: '0.9rem', fontWeight: 600, color: '#fff' }}>
-            Marks: {totalTaps}/{MAX_TAPS_PER_TURN}
-            {turnPreview.totalPoints > 0 && (
-              <span style={{ marginLeft: 'var(--spacing-md)', color: 'var(--color-success)' }}>
-                +{turnPreview.totalPoints} pts
-              </span>
-            )}
-          </div>
-        </Card>
       )}
 
       {/* ===== Turn History ===== */}

@@ -168,6 +168,27 @@ export function GamePage() {
     }
   };
 
+  const undoFromSummary = async () => {
+    if (!game) return;
+    try {
+      // Reopen the game first, then undo the last turn
+      await gameService.updateStatus(game.GameID, 'InProgress', undefined);
+      if (game.GameType === 'Cricket' || game.GameType === 'Shanghai') {
+        await gameService.undoLastCricketTurn(game.GameID);
+        const ct = await gameService.getCricketTurns(game.GameID);
+        setCricketTurns(ct);
+      } else {
+        await gameService.undoLastTurn(game.GameID);
+        const t = await gameService.getTurns(game.GameID);
+        setTurns(t);
+      }
+      setShowEndOverlay(false);
+      load();
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
   const endGame = async (winnerTeamSeasonId: number) => {
     if (!game || !match) return;
     await gameService.updateStatus(game.GameID, 'Completed', winnerTeamSeasonId);
@@ -796,6 +817,10 @@ export function GamePage() {
                 })()}
                 <Button variant="ghost" onClick={() => setShowEndOverlay(false)} fullWidth size="sm">
                   View Scoreboard
+                </Button>
+                <Button variant="ghost" onClick={undoFromSummary} fullWidth size="sm"
+                  style={{ color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}>
+                  ↩ Undo Last Turn
                 </Button>
               </div>
             </div>

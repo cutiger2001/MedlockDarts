@@ -419,7 +419,7 @@ export function KillerScoreboard({
             {pendingHits.length > 0 && (
               <div style={{
                 fontSize: '0.9rem', fontWeight: 700, marginTop: 4,
-                backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 8,
+                backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 'var(--radius-md)',
                 padding: '2px 10px', display: 'inline-block',
               }}>
                 🎯 {totalPendingHits} hit{totalPendingHits !== 1 ? 's' : ''}
@@ -506,7 +506,7 @@ export function KillerScoreboard({
                     fontSize: '0.75rem', fontWeight: 700,
                     color: 'var(--color-info, #3b82f6)',
                     border: '1px solid var(--color-info, #3b82f6)',
-                    borderRadius: 4, padding: '1px 5px',
+                    borderRadius: 'var(--radius-sm)', padding: '1px 5px',
                   }}>
                     🛡️ IMMUNE
                   </span>
@@ -514,7 +514,7 @@ export function KillerScoreboard({
                 {hitCount > 0 && !ps.isEliminated && (
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    minWidth: 24, height: 24, borderRadius: 12, fontSize: '0.8rem', fontWeight: 700,
+                    minWidth: 24, height: 24, borderRadius: '999px', fontSize: '0.8rem', fontWeight: 700,
                     padding: '0 5px', color: '#fff',
                     backgroundColor: committed.playerId === currentPlayer?.playerId
                       ? 'var(--color-success, #22c55e)'

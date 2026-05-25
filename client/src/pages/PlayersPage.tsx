@@ -198,7 +198,24 @@ export function PlayersPage() {
             Player Color
           </label>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {['#c62828', '#ad1457', '#6a1b9a', '#283593', '#0277bd', '#00695c', '#2e7d32', '#f57f17', '#e65100', '#4e342e', '#37474f', '#1565c0', '#7b1fa2', '#d84315'].map(c => (
+            {[
+              // Reds & Pinks
+              '#FF0000', '#c62828', '#ad1457', '#FF69B4',
+              // Oranges
+              '#FF6600', '#e65100', '#d84315',
+              // Yellows
+              '#FFD700', '#f57f17', '#FFFF00',
+              // Greens
+              '#2e7d32', '#00695c', '#00C000', '#90EE90',
+              // Blues
+              '#0277bd', '#1565c0', '#283593', '#00BFFF',
+              // Purples & Violets
+              '#6a1b9a', '#7b1fa2', '#9400D3', '#EE82EE',
+              // Browns & Tans
+              '#4e342e', '#A0522D', '#DEB887',
+              // Greys, Black & White
+              '#37474f', '#808080', '#000000', '#FFFFFF',
+            ].map(c => (
               <button
                 key={c}
                 onClick={() => setForm(f => ({ ...f, ThemeColor: f.ThemeColor === c ? null : c }))}
@@ -207,7 +224,8 @@ export function PlayersPage() {
                   border: form.ThemeColor === c ? '3px solid #FFD700' : '2px solid var(--color-border)',
                   cursor: 'pointer', boxShadow: form.ThemeColor === c ? '0 0 0 2px #FFD700' : 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  color: '#fff', fontSize: '0.9rem', fontWeight: 700,
+                  color: ['#FFD700', '#FFFF00', '#90EE90', '#DEB887', '#EE82EE', '#00BFFF', '#FFFFFF'].includes(c) ? '#333' : '#fff',
+                  fontSize: '0.9rem', fontWeight: 700,
                 }}
               >
                 {form.ThemeColor === c ? '✓' : ''}

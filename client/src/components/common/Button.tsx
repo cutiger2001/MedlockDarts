@@ -57,9 +57,9 @@ export function Button({
 
   return (
     <button
-      style={{ ...baseStyle, ...sizeStyles[size], ...variantStyles[variant] }}
-      className={className}
       {...props}
+      className={className}
+      style={{ ...baseStyle, ...sizeStyles[size], ...variantStyles[variant], ...props.style }}
     >
       {children}
     </button>

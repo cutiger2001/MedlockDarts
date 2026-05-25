@@ -253,7 +253,7 @@ export function PlayGamePage() {
                   onClick={() => movePlayer(team, i, -1)}
                   disabled={i === 0}
                   style={{
-                    background: 'none', border: '1px solid var(--color-border)', borderRadius: 4,
+                    background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
                     width: 28, height: 28, cursor: i === 0 ? 'default' : 'pointer',
                     opacity: i === 0 ? 0.3 : 1, fontSize: '0.8rem',
                   }}
@@ -264,7 +264,7 @@ export function PlayGamePage() {
                   onClick={() => movePlayer(team, i, 1)}
                   disabled={i === teamData.players.length - 1}
                   style={{
-                    background: 'none', border: '1px solid var(--color-border)', borderRadius: 4,
+                    background: 'none', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
                     width: 28, height: 28, cursor: i === teamData.players.length - 1 ? 'default' : 'pointer',
                     opacity: i === teamData.players.length - 1 ? 0.3 : 1, fontSize: '0.8rem',
                   }}
@@ -274,7 +274,7 @@ export function PlayGamePage() {
                 <button
                   onClick={() => removeFromTeam(team, p.PlayerID)}
                   style={{
-                    background: 'none', border: '1px solid var(--color-danger)', borderRadius: 4,
+                    background: 'none', border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-sm)',
                     width: 28, height: 28, cursor: 'pointer', color: 'var(--color-danger)', fontSize: '0.85rem',
                   }}
                 >
@@ -459,7 +459,7 @@ export function PlayGamePage() {
                         });
                       }}
                       style={{
-                        background: 'none', border: '1px solid var(--color-danger)', borderRadius: 4,
+                        background: 'none', border: '1px solid var(--color-danger)', borderRadius: 'var(--radius-sm)',
                         width: 28, height: 28, cursor: 'pointer', color: 'var(--color-danger)', fontSize: '0.85rem',
                       }}
                     >

@@ -32,7 +32,7 @@ export function Input({ label, error, id, style, ...props }: InputProps) {
         {...props}
       />
       {error && (
-        <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: '4px' }}>
+        <p style={{ color: 'var(--color-danger)', fontSize: '0.8rem', marginTop: 'var(--spacing-xs)' }}>
           {error}
         </p>
       )}
