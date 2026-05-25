@@ -385,16 +385,16 @@ if ($useSqlCmd) {
     # Build sqlcmd auth args based on what works
     function Invoke-SqlCmd-Admin {
         param([string]$Query, [string]$InputFile, [string]$Database)
-        $args = @("-S", $serverConn)
+        $sqlArgs = @("-S", $serverConn)
         if ($adminAuth -eq "windows") {
-            $args += "-E"
+            $sqlArgs += "-E"
         } else {
-            $args += @("-U", "sa", "-P", $DbPassword)
+            $sqlArgs += @("-U", "sa", "-P", $DbPassword)
         }
-        if ($Database) { $args += @("-d", $Database) }
-        if ($InputFile) { $args += @("-i", $InputFile) }
-        if ($Query) { $args += @("-Q", $Query) }
-        return & $sqlcmd -N o @args 2>&1
+        if ($Database) { $sqlArgs += @("-d", $Database) }
+        if ($InputFile) { $sqlArgs += @("-i", $InputFile) }
+        if ($Query) { $sqlArgs += @("-Q", $Query) }
+        return & $sqlcmd -N o @sqlArgs 2>&1
     }
 
     # Enable Mixed Mode auth if using Windows Auth
