@@ -638,6 +638,82 @@ foreach ($scPath in @($shortcutPath, $userShortcutPath)) {
 Write-OK "Desktop shortcut created"
 
 # ══════════════════════════════════════════════════════════════════════
+# STEP 8: Season History Import (optional)
+# ══════════════════════════════════════════════════════════════════════
+Write-Step 8 "Season History Import (optional)"
+
+$excelPath = Join-Path $AppDir "History\Darts Rankings 2024 (1).xlsx"
+$importScript = Join-Path $AppDir "scripts\import-history.js"
+$simulateScript = Join-Path $AppDir "scripts\simulate-summer.js"
+
+if (-not (Test-Path $excelPath)) {
+    Write-Warn "History file not found: History\Darts Rankings 2024 (1).xlsx"
+    Write-Host "      Skipping history import — copy the Excel file into the History\ folder" -ForegroundColor Gray
+    Write-Host "      and run:  node scripts\import-history.js" -ForegroundColor DarkGray
+} else {
+    Write-Host ""
+    Write-Host "  Import historical season data from the Excel rankings file?" -ForegroundColor White
+    Write-Host "  WARNING: This will wipe all existing data and reload from the spreadsheet." -ForegroundColor DarkYellow
+    Write-Host "  Enter Y to import, or press Enter to skip." -ForegroundColor DarkGray
+    $importChoice = Read-Host "  Import history? [y/N]"
+
+    if ($importChoice -match '^[Yy]') {
+        # The import scripts require mssql, installed under server/node_modules.
+        # Run them from the project root so relative paths (History/, scripts/) resolve correctly.
+        Push-Location $AppDir
+
+        # Patch the password in the scripts if the user changed it from the default
+        $defaultPw = "180Allday!"
+        if ($DbPassword -ne $defaultPw) {
+            Write-Host "      Updating DB password in import scripts..." -ForegroundColor Gray
+            (Get-Content $importScript -Raw) -replace [regex]::Escape("password: '$defaultPw'"), "password: '$DbPassword'" |
+                Set-Content $importScript -Encoding UTF8
+            (Get-Content $simulateScript -Raw) -replace [regex]::Escape("password: '$defaultPw'"), "password: '$DbPassword'" |
+                Set-Content $simulateScript -Encoding UTF8
+            Write-OK "Import scripts updated with new password"
+        }
+
+        Write-Host "      Running import-history.js (this may take a minute)..." -ForegroundColor Gray
+        $importOutput = cmd /c "node scripts\import-history.js 2>&1"
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Historical seasons imported successfully"
+            $importOutput | Select-Object -Last 5 | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
+        } else {
+            Write-Fail "History import failed (exit code $LASTEXITCODE)"
+            $importOutput | Select-Object -Last 10 | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+            Write-Host "      You can retry manually:  node scripts\import-history.js" -ForegroundColor Gray
+        }
+
+        Write-Host ""
+        Write-Host "  Simulate remaining Summer 2026 unplayed matches?" -ForegroundColor White
+        Write-Host "  Enter Y to simulate, or press Enter to skip." -ForegroundColor DarkGray
+        $simChoice = Read-Host "  Simulate Summer 2026? [y/N]"
+
+        if ($simChoice -match '^[Yy]') {
+            Write-Host "      Running simulate-summer.js..." -ForegroundColor Gray
+            $simOutput = cmd /c "node scripts\simulate-summer.js 2>&1"
+            if ($LASTEXITCODE -eq 0) {
+                Write-OK "Summer 2026 simulation complete"
+                $simOutput | Select-Object -Last 5 | ForEach-Object { Write-Host "        $_" -ForegroundColor DarkGray }
+            } else {
+                Write-Fail "Simulation failed (exit code $LASTEXITCODE)"
+                $simOutput | Select-Object -Last 10 | ForEach-Object { Write-Host "      $_" -ForegroundColor Red }
+                Write-Host "      You can retry manually:  node scripts\simulate-summer.js" -ForegroundColor Gray
+            }
+        } else {
+            Write-Warn "Summer 2026 simulation skipped"
+        }
+
+        Pop-Location
+    } else {
+        Write-Warn "History import skipped"
+        Write-Host "      To import later, run from the app folder:" -ForegroundColor Gray
+        Write-Host "        node scripts\import-history.js" -ForegroundColor DarkGray
+        Write-Host "        node scripts\simulate-summer.js   (optional)" -ForegroundColor DarkGray
+    }
+}
+
+# ══════════════════════════════════════════════════════════════════════
 # DONE
 # ══════════════════════════════════════════════════════════════════════
 $localIP = Get-LocalIP
