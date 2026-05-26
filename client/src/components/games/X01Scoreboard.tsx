@@ -253,16 +253,10 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   const turnScoreSoFar = currentDarts.reduce((s, d) => s + d.score, 0);
   const liveRemaining = currentTeamScore ? currentTeamScore.remaining - getEffectiveTurnScore(currentDarts, doubleInRequired, currentTeamScore.hasDoubledIn) : target;
 
-  // Auto-switch to dart mode on single-dart-out (even ≤ 40) for better checkout % tracking
+  // isSingleDartOut is used to show a hint badge near the mode toggle
   const isSingleDartOut = currentTeamScore
     ? currentTeamScore.remaining > 0 && currentTeamScore.remaining <= 40 && currentTeamScore.remaining % 2 === 0
     : false;
-
-  useEffect(() => {
-    if (isSingleDartOut && currentDarts.length === 0) {
-      setModeOverride('dart');
-    }
-  }, [isSingleDartOut, currentDarts.length]);
 
   const hasDoubledIn = useMemo(() => {
     if (!doubleInRequired) return true;
