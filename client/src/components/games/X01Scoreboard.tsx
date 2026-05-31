@@ -593,32 +593,34 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
             gap: 'var(--spacing-xs)', marginBottom: 'var(--spacing-xs)',
           }}>
           {/* Home team */}
-          <Card style={{
+          <div style={{
             textAlign: 'center', backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
-            padding: '8px 4px',
-            minHeight: 130,
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 4px 10px',
+            height: 160,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            position: 'relative',
+            overflow: 'hidden',
           }}>
-            <div style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 600, marginBottom: 2 }}>{match.HomeTeamName}</div>
-            <div style={{ fontSize: 'clamp(5rem, 22vw, 14rem)', fontWeight: 900, lineHeight: 1 }}>
+            <div style={{ fontSize: '0.75rem', opacity: 0.85, fontWeight: 600, marginBottom: 4, letterSpacing: '0.02em' }}>{match.HomeTeamName}</div>
+            <div style={{ fontSize: '9rem', fontWeight: 900, lineHeight: 1 }}>
               {teamScores[homeTeamId]?.remaining ?? target}
             </div>
-          </Card>
+          </div>
 
           {/* Away team */}
-          <Card style={{
+          <div style={{
             textAlign: 'center', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
-            padding: '8px 4px',
-            minHeight: 130,
+            borderRadius: 'var(--radius-md)',
+            padding: '8px 4px 10px',
+            height: 160,
             display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-            position: 'relative',
+            overflow: 'hidden',
           }}>
-            <div style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 600, marginBottom: 2 }}>{match.AwayTeamName}</div>
-            <div style={{ fontSize: 'clamp(5rem, 22vw, 14rem)', fontWeight: 900, lineHeight: 1 }}>
+            <div style={{ fontSize: '0.75rem', opacity: 0.85, fontWeight: 600, marginBottom: 4, letterSpacing: '0.02em' }}>{match.AwayTeamName}</div>
+            <div style={{ fontSize: '9rem', fontWeight: 900, lineHeight: 1 }}>
               {teamScores[awayTeamId]?.remaining ?? target}
             </div>
-          </Card>
+          </div>
         </div>
 
         {/* Game info strip below scores */}

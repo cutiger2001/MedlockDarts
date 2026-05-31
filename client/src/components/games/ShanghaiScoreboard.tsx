@@ -382,7 +382,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
             <tr style={{ backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)' }}>
               <th style={{ padding: '10px', textAlign: 'center', width: '35%', boxShadow: isHomeActive ? 'inset 0 0 0 3px #FFD700' : 'none' }}>
                 {match.HomeTeamName}
-                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
+                <div style={{ fontSize: '3.5rem', fontWeight: 900, lineHeight: 1 }}>
                   {(homeState?.Points || 0) + (currentPlayer?.TeamSeasonID === homeTeamId ? turnPreview.totalPoints : 0)}
                 </div>
               </th>
@@ -392,7 +392,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
               </th>
               <th style={{ padding: '10px', textAlign: 'center', width: '35%', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)', boxShadow: isAwayActive ? 'inset 0 0 0 3px #FFD700' : 'none' }}>
                 {match.AwayTeamName}
-                <div style={{ fontSize: '1.5rem', fontWeight: 700 }}>
+                <div style={{ fontSize: '3.5rem', fontWeight: 900, lineHeight: 1 }}>
                   {(awayState?.Points || 0) + (currentPlayer?.TeamSeasonID === awayTeamId ? turnPreview.totalPoints : 0)}
                 </div>
               </th>

@@ -136,6 +136,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
   // Tap-based: marks per segment for current turn
   const [turnMarks, setTurnMarks] = useState<Record<string, number>>({});
   const [allStarAnim, setAllStarAnim] = useState<{ level: AllStarLevel; playerName: string } | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const homeTeamId = match.HomeTeamSeasonID;
   const awayTeamId = match.AwayTeamSeasonID;
@@ -483,20 +484,24 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         {/* Scores side-by-side */}
         <div style={{ display: 'flex' }}>
         <div style={{
-          flex: 1, padding: '12px 8px', textAlign: 'center',
+          flex: 1, padding: '8px 4px', textAlign: 'center',
           backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
+          height: 130, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden',
         }}>
-          <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.HomeTeamName}</div>
-          <div style={{ fontSize: 'clamp(3.5rem, 14vw, 10rem)', fontWeight: 900, lineHeight: 1 }}>
+          <div style={{ fontSize: '0.75rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.HomeTeamName}</div>
+          <div style={{ fontSize: '7rem', fontWeight: 900, lineHeight: 1 }}>
             {(homeState?.Points || 0) + (currentPlayer?.TeamSeasonID === homeTeamId ? turnPreview.totalPoints : 0)}
           </div>
         </div>
         <div style={{
-          flex: 1, padding: '12px 8px', textAlign: 'center',
+          flex: 1, padding: '8px 4px', textAlign: 'center',
           backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
+          height: 130, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          overflow: 'hidden',
         }}>
-          <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.AwayTeamName}</div>
-          <div style={{ fontSize: 'clamp(3.5rem, 14vw, 10rem)', fontWeight: 900, lineHeight: 1 }}>
+          <div style={{ fontSize: '0.75rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.AwayTeamName}</div>
+          <div style={{ fontSize: '7rem', fontWeight: 900, lineHeight: 1 }}>
             {(awayState?.Points || 0) + (currentPlayer?.TeamSeasonID === awayTeamId ? turnPreview.totalPoints : 0)}
           </div>
         </div>
@@ -661,8 +666,20 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         </div>
       )}
 
-      {/* ===== Turn History ===== */}
+      {/* ===== Turn History (collapsed by default to save screen space) ===== */}
       {cricketTurns.length > 0 && (
+        <div style={{ marginTop: 'var(--spacing-xs)' }}>
+          <button
+            onClick={() => setShowHistory(h => !h)}
+            style={{
+              width: '100%', padding: '6px', background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+              color: 'var(--color-text-light)', fontSize: '0.8rem', cursor: 'pointer',
+            }}
+          >
+            {showHistory ? '▲ Hide Turn History' : `▼ Turn History (${cricketTurns.length} turns)`}
+          </button>
+          {showHistory && (
         <Card title="Turn History">
           <div style={{ overflowX: 'auto', maxHeight: 250 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -701,6 +718,8 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
             </table>
           </div>
         </Card>
+          )}
+        </div>
       )}
 
       {/* All-Star animation keyframes */}
