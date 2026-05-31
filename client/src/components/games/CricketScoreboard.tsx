@@ -137,6 +137,13 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
   const [turnMarks, setTurnMarks] = useState<Record<string, number>>({});
   const [allStarAnim, setAllStarAnim] = useState<{ level: AllStarLevel; playerName: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [malortAnim, setMalortAnim] = useState<{ playerName: string } | null>(null);
+
+  const handleMalort = () => {
+    const name = currentPlayer ? `${currentPlayer.FirstName} ${currentPlayer.LastName}` : 'Current Player';
+    setMalortAnim({ playerName: name });
+    setTimeout(() => setMalortAnim(null), 3500);
+  };
 
   const homeTeamId = match.HomeTeamSeasonID;
   const awayTeamId = match.AwayTeamSeasonID;
@@ -454,6 +461,35 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
 
   return (
     <div style={{ width: '100%', margin: '0 auto' }}>
+      {/* ===== Malört Penalty Animation Overlay ===== */}
+      {malortAnim && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          backgroundColor: 'rgba(0,0,0,0.88)', zIndex: 10000,
+          animation: 'fadeInOut 3.5s ease-in-out',
+        }}>
+          <div style={{ textAlign: 'center', padding: '0 var(--spacing-md)' }}>
+            <div style={{
+              fontFamily: 'Impact, "Arial Black", sans-serif',
+              fontSize: '5.5rem', fontWeight: 900, letterSpacing: '0.08em',
+              color: '#FF1A1A',
+              textShadow: '0 0 7px #FF1A1A, 0 0 14px #FF1A1A, 0 0 28px #FF0000, 0 0 56px #FF0000, 0 0 100px #FF0000',
+              animation: 'neonFlicker 3.5s ease-in-out',
+              lineHeight: 1,
+            }}>MALÖRT</div>
+            <div style={{
+              fontSize: '2rem', fontWeight: 900, color: '#FFD700', marginTop: '0.75rem',
+              textShadow: '0 0 10px rgba(255,215,0,0.8)',
+              letterSpacing: '0.05em',
+            }}>PENALTY SHOT!</div>
+            <div style={{ color: '#fff', fontSize: '1.4rem', marginTop: '0.5rem', opacity: 0.9 }}>
+              {malortAnim.playerName}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== All-Star Animation Overlay ===== */}
       {allStarAnim && (
         <div style={{
@@ -658,6 +694,14 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
             </Button>
           )}
           <Button
+            onClick={handleMalort}
+            style={{ flex: '0 0 auto', minHeight: 64, fontWeight: 900,
+              background: '#1a0000', color: '#FF3333', border: '2px solid #FF3333',
+              textShadow: '0 0 6px #FF0000', boxShadow: '0 0 8px rgba(255,0,0,0.4)' }}
+          >
+            🥃 Malört
+          </Button>
+          <Button
             onClick={completeTurn}
             style={{ flex: 1, minHeight: 64, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
           >
@@ -722,7 +766,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         </div>
       )}
 
-      {/* All-Star animation keyframes */}
+      {/* All-Star + Malört animation keyframes */}
       <style>{`
         @keyframes fadeInOut {
           0% { opacity: 0; }
@@ -733,6 +777,18 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         @keyframes pulse {
           from { transform: scale(1); }
           to { transform: scale(1.1); }
+        }
+        @keyframes neonFlicker {
+          0%   { opacity: 0; }
+          8%   { opacity: 1; }
+          10%  { opacity: 0.4; }
+          12%  { opacity: 1; }
+          14%  { opacity: 0.6; }
+          16%  { opacity: 1; }
+          80%  { opacity: 1; }
+          88%  { opacity: 0.7; }
+          90%  { opacity: 1; }
+          100% { opacity: 0; }
         }
       `}</style>
     </div>

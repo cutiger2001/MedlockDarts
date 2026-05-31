@@ -161,6 +161,15 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
 
   // All-Star animation
   const [allStarAnim, setAllStarAnim] = useState<{ level: AllStarLevel; playerName: string } | null>(null);
+  // Malört penalty animation
+  const [malortAnim, setMalortAnim] = useState<{ playerName: string } | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const handleMalort = () => {
+    const name = currentPlayer ? `${currentPlayer.FirstName} ${currentPlayer.LastName}` : 'Current Player';
+    setMalortAnim({ playerName: name });
+    setTimeout(() => setMalortAnim(null), 3500);
+  };
 
   const target = game.X01Target || 501;
   const doubleInRequired = game.DoubleInRequired;
@@ -534,6 +543,35 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
 
   return (
     <div style={{ width: '100%', margin: '0 auto' }}>
+      {/* ===== Malört Penalty Animation Overlay ===== */}
+      {malortAnim && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          backgroundColor: 'rgba(0,0,0,0.88)', zIndex: 10000,
+          animation: 'fadeInOut 3.5s ease-in-out',
+        }}>
+          <div style={{ textAlign: 'center', padding: '0 var(--spacing-md)' }}>
+            <div style={{
+              fontFamily: 'Impact, "Arial Black", sans-serif',
+              fontSize: '5.5rem', fontWeight: 900, letterSpacing: '0.08em',
+              color: '#FF1A1A',
+              textShadow: '0 0 7px #FF1A1A, 0 0 14px #FF1A1A, 0 0 28px #FF0000, 0 0 56px #FF0000, 0 0 100px #FF0000',
+              animation: 'neonFlicker 3.5s ease-in-out',
+              lineHeight: 1,
+            }}>MALÖRT</div>
+            <div style={{
+              fontSize: '2rem', fontWeight: 900, color: '#FFD700', marginTop: '0.75rem',
+              textShadow: '0 0 10px rgba(255,215,0,0.8)',
+              letterSpacing: '0.05em',
+            }}>PENALTY SHOT!</div>
+            <div style={{ color: '#fff', fontSize: '1.4rem', marginTop: '0.5rem', opacity: 0.9 }}>
+              {malortAnim.playerName}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ===== All-Star Animation Overlay ===== */}
       {allStarAnim && (
         <div style={{
@@ -1025,6 +1063,14 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
             </Button>
           )}
           <Button
+            size="sm"
+            onClick={handleMalort}
+            style={{ fontWeight: 900, background: '#1a0000', color: '#FF3333', border: '2px solid #FF3333', minWidth: 90,
+              textShadow: '0 0 6px #FF0000', boxShadow: '0 0 8px rgba(255,0,0,0.4)' }}
+          >
+            🥃 Malört
+          </Button>
+          <Button
             variant={scoringMode === 'turn' ? 'primary' : 'ghost'}
             size="sm"
             onClick={() => { setModeOverride('turn'); setCurrentDarts([]); }}
@@ -1048,8 +1094,20 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
         </div>
       )}
 
-      {/* ===== Turn History ===== */}
+      {/* ===== Turn History (collapsed by default) ===== */}
       {turns.length > 0 && (
+        <div style={{ marginTop: 'var(--spacing-xs)' }}>
+          <button
+            onClick={() => setShowHistory(h => !h)}
+            style={{
+              width: '100%', padding: '6px', background: 'var(--color-surface)',
+              border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+              color: 'var(--color-text-light)', fontSize: '0.8rem', cursor: 'pointer',
+            }}
+          >
+            {showHistory ? '▲ Hide Turn History' : `▼ Turn History (${turns.length} turns)`}
+          </button>
+          {showHistory && (
         <Card title="Turn History">
           <div style={{ overflowX: 'auto', maxHeight: 300 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -1098,9 +1156,11 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
             </table>
           </div>
         </Card>
+          )}
+        </div>
       )}
 
-      {/* All-Star animation keyframes */}
+      {/* All-Star + Malört animation keyframes */}
       <style>{`
         @keyframes fadeInOut {
           0% { opacity: 0; }
@@ -1111,6 +1171,18 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
         @keyframes pulse {
           from { transform: scale(1); }
           to { transform: scale(1.1); }
+        }
+        @keyframes neonFlicker {
+          0%   { opacity: 0; }
+          8%   { opacity: 1; }
+          10%  { opacity: 0.4; }
+          12%  { opacity: 1; }
+          14%  { opacity: 0.6; }
+          16%  { opacity: 1; }
+          80%  { opacity: 1; }
+          88%  { opacity: 0.7; }
+          90%  { opacity: 1; }
+          100% { opacity: 0; }
         }
       `}</style>
     </div>
