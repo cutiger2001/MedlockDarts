@@ -9,8 +9,6 @@ import {
   announceNowThrowing, announceRequires, announceX01Score, announceAllStar,
   announceBust, announceGameOut,
 } from '../../utils/announcer';
-import { useVoiceInput } from '../../hooks/useVoiceInput';
-import { parseVoiceScore } from '../../utils/voiceScoreParser';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -166,31 +164,6 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   // Malört penalty animation
   const [malortAnim, setMalortAnim] = useState<{ playerName: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [voiceError, setVoiceError] = useState<string | null>(null);
-
-  const handleVoiceResult = useCallback((transcript: string) => {
-    const score = parseVoiceScore(transcript);
-    if (score === null) {
-      setVoiceError(`Didn't catch "${transcript}" — try again`);
-      setTimeout(() => setVoiceError(null), 3000);
-      return;
-    }
-    setVoiceError(null);
-    // Auto-switch to turn mode so the score populates the numpad display
-    if (scoringMode !== 'turn') {
-      setModeOverride('turn');
-      setCurrentDarts([]);
-    }
-    setTurnInput(String(score));
-  }, [scoringMode]);
-
-  const { state: voiceState, isSupported: voiceSupported, start: voiceStart, stop: voiceStop } = useVoiceInput({
-    onResult: handleVoiceResult,
-    onError: (err) => {
-      setVoiceError(`Mic error: ${err}`);
-      setTimeout(() => setVoiceError(null), 3000);
-    },
-  });
 
   const handleMalort = () => {
     const name = currentPlayer ? `${currentPlayer.FirstName} ${currentPlayer.LastName}` : 'Current Player';
@@ -827,22 +800,6 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
         </Card>
       )}
 
-      {/* ===== Voice Error ===== */}
-      {voiceError && (
-        <div style={{
-          padding: 'var(--spacing-sm) var(--spacing-md)',
-          marginBottom: 'var(--spacing-md)',
-          backgroundColor: 'var(--color-warning)',
-          color: '#000',
-          borderRadius: 'var(--radius-sm)',
-          fontWeight: 700,
-          textAlign: 'center',
-          fontSize: '1rem',
-        }}>
-          {voiceError}
-        </div>
-      )}
-
       {/* ===== Bust Message ===== */}
       {bustMessage && (
         <div style={{
@@ -1113,25 +1070,6 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
           >
             🥃 Malört
           </Button>
-          {voiceSupported && (
-            <Button
-              size="sm"
-              onClick={voiceState === 'listening' ? voiceStop : voiceStart}
-              style={{
-                fontWeight: 700, minWidth: 90,
-                background: voiceState === 'listening' ? '#8B0000'
-                  : voiceState === 'processing' ? 'var(--color-success)' : undefined,
-                color: (voiceState === 'listening' || voiceState === 'processing') ? '#fff' : undefined,
-                border: voiceState === 'listening' ? '2px solid #FF4444' : undefined,
-                animation: voiceState === 'listening' ? 'micPulse 1.2s ease-in-out infinite' : undefined,
-              }}
-            >
-              {voiceState === 'listening' ? '🔴 Listening…'
-                : voiceState === 'processing' ? '✓ Got it'
-                : voiceState === 'error' ? '⚠️ Mic Error'
-                : '🎤 Voice'}
-            </Button>
-          )}
           <Button
             variant={scoringMode === 'turn' ? 'primary' : 'ghost'}
             size="sm"
@@ -1233,11 +1171,6 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
         @keyframes pulse {
           from { transform: scale(1); }
           to { transform: scale(1.1); }
-        }
-        @keyframes micPulse {
-          0%   { box-shadow: 0 0 0 0 rgba(255,68,68,0.8); }
-          70%  { box-shadow: 0 0 0 12px rgba(255,68,68,0); }
-          100% { box-shadow: 0 0 0 0 rgba(255,68,68,0); }
         }
         @keyframes neonFlicker {
           0%   { opacity: 0; }
