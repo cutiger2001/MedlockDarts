@@ -173,30 +173,37 @@ export const gameService = {
    */
   async deleteGame(id: number): Promise<void> {
     const pool = await getPool();
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    let matchId: number | undefined;
+    try {
+      const gameResult = await transaction.request().input('id', sql.Int, id)
+        .query('SELECT MatchID FROM Games WHERE GameID = @id');
+      matchId = gameResult.recordset[0]?.MatchID;
 
-    // Get game info before deleting
-    const gameResult = await pool.request().input('id', sql.Int, id)
-      .query('SELECT MatchID FROM Games WHERE GameID = @id');
-    const matchId = gameResult.recordset[0]?.MatchID;
+      // Delete in dependency order — all-or-nothing
+      await transaction.request().input('id', sql.Int, id)
+        .query('DELETE FROM CricketTurns WHERE GameID = @id');
+      await transaction.request().input('id', sql.Int, id)
+        .query('DELETE FROM CricketState WHERE GameID = @id');
+      await transaction.request().input('id', sql.Int, id)
+        .query('DELETE FROM Turns WHERE GameID = @id');
+      await transaction.request().input('id', sql.Int, id)
+        .query('DELETE FROM GamePlayers WHERE GameID = @id');
+      await transaction.request().input('id', sql.Int, id)
+        .query('DELETE FROM Games WHERE GameID = @id');
 
-    // Delete in dependency order
-    await pool.request().input('id', sql.Int, id)
-      .query('DELETE FROM CricketTurns WHERE GameID = @id');
-    await pool.request().input('id', sql.Int, id)
-      .query('DELETE FROM CricketState WHERE GameID = @id');
-    await pool.request().input('id', sql.Int, id)
-      .query('DELETE FROM Turns WHERE GameID = @id');
-    await pool.request().input('id', sql.Int, id)
-      .query('DELETE FROM GamePlayers WHERE GameID = @id');
-    await pool.request().input('id', sql.Int, id)
-      .query('DELETE FROM Games WHERE GameID = @id');
+      await transaction.commit();
+    } catch (err) {
+      await transaction.rollback().catch(() => {});
+      throw err;
+    }
 
-    // If the match has no remaining games and it's ad-hoc, clean up the match
+    // Post-commit: clean up orphaned ad-hoc match (best-effort, outside transaction)
     if (matchId) {
       const remaining = await pool.request().input('mId', sql.Int, matchId)
         .query('SELECT COUNT(*) AS Cnt FROM Games WHERE MatchID = @mId');
       if (remaining.recordset[0].Cnt === 0) {
-        // Check if ad-hoc
         const matchInfo = await pool.request().input('mId', sql.Int, matchId)
           .query(`
             SELECT s.SeasonName FROM Matches m
@@ -246,116 +253,116 @@ export const gameService = {
    */
   async checkMatchCompletion(matchId: number): Promise<void> {
     const pool = await getPool();
-
-    // Get match info
-    const matchResult = await pool.request()
-      .input('matchId', sql.Int, matchId)
-      .query(`
-        SELECT m.*, s.SeasonName
-        FROM Matches m
-        JOIN Seasons s ON m.SeasonID = s.SeasonID
-        WHERE m.MatchID = @matchId
-      `);
-
-    if (matchResult.recordset.length === 0) return;
-    const match = matchResult.recordset[0];
-
-    // Get all games for this match
-    const gamesResult = await pool.request()
-      .input('matchId', sql.Int, matchId)
-      .query('SELECT * FROM Games WHERE MatchID = @matchId');
-
-    const games = gamesResult.recordset;
-    if (games.length === 0) return;
-
-    const completedGames = games.filter((g: Game) => g.Status === 'Completed');
-
-    // Ad-hoc matches: complete when any game finishes
-    const isAdHoc = match.SeasonName === 'Ad-Hoc Play';
-    const isPlayoff = !!match.IsPlayoff;
-
-    // Tally game wins per team
-    const winCounts: Record<number, number> = {};
-    for (const g of completedGames) {
-      if (g.WinnerTeamSeasonID) {
-        winCounts[g.WinnerTeamSeasonID] = (winCounts[g.WinnerTeamSeasonID] || 0) + 1;
-      }
-    }
-
-    const homeWins = winCounts[match.HomeTeamSeasonID] || 0;
-    const awayWins = winCounts[match.AwayTeamSeasonID] || 0;
-    const majority = 3; // first to 3 game wins
-
-    if (isAdHoc) {
-      // For ad-hoc, complete when all games are done (usually just 1)
-      if (completedGames.length !== games.length || completedGames.length === 0) return;
-    } else if (isPlayoff) {
-      // Playoff: first team to win 3 games wins the match
-      if (homeWins < majority && awayWins < majority) return;
-    } else {
-      // Regular season: all 5 games must be completed
-      if (completedGames.length < 5 || completedGames.length !== games.length) return;
-    }
-
-    // Determine match winner — zero-sum, no draws (5 games = odd, always a winner)
-    const matchWinner = homeWins > awayWins ? match.HomeTeamSeasonID : match.AwayTeamSeasonID;
-
-    // Update match status with scores
-    await pool.request()
-      .input('matchId', sql.Int, matchId)
-      .input('status', sql.NVarChar(20), 'Completed')
-      .input('winner', sql.Int, matchWinner)
-      .input('homeScore', sql.Int, homeWins)
-      .input('awayScore', sql.Int, awayWins)
-      .query(`
-        UPDATE Matches
-        SET Status = @status, WinnerTeamSeasonID = @winner,
-            HomeScore = @homeScore, AwayScore = @awayScore,
-            UpdatedAt = SYSUTCDATETIME()
-        WHERE MatchID = @matchId
-      `);
-
-    // Update TeamSeasons — add game wins to each team's total (skip for ad-hoc)
-    if (!isAdHoc) {
-      const homeTS = match.HomeTeamSeasonID;
-      const awayTS = match.AwayTeamSeasonID;
-
-      await pool.request()
-        .input('ts', sql.Int, homeTS)
-        .input('gw', sql.Int, homeWins)
-        .query('UPDATE TeamSeasons SET GameWins = GameWins + @gw WHERE TeamSeasonID = @ts');
-
-      await pool.request()
-        .input('ts', sql.Int, awayTS)
-        .input('gw', sql.Int, awayWins)
-        .query('UPDATE TeamSeasons SET GameWins = GameWins + @gw WHERE TeamSeasonID = @ts');
-    }
-
-    // If this was a playoff semi-final, check if both semis are done to create finals
-    if (match.IsPlayoff && match.PlayoffRound === 'Semi') {
-      await this.checkSemiFinalsCompletion(match.SeasonID);
-    }
-
-    // If this was the playoff final, crown the champion and close the season
-    if (match.IsPlayoff && match.PlayoffRound === 'Final') {
-      const loser = matchWinner === match.HomeTeamSeasonID
-        ? match.AwayTeamSeasonID : match.HomeTeamSeasonID;
-
-      await pool.request()
-        .input('ts', sql.Int, loser)
-        .query('UPDATE TeamSeasons SET IsEliminated = 1 WHERE TeamSeasonID = @ts');
-
-      await pool.request()
-        .input('seasonId', sql.Int, match.SeasonID)
-        .input('champion', sql.Int, matchWinner)
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      // UPDLOCK serialises concurrent calls for the same matchId — prevents double-counting
+      const matchResult = await transaction.request()
+        .input('matchId', sql.Int, matchId)
         .query(`
-          UPDATE Seasons
-          SET Status = 'Completed',
-              ChampionTeamSeasonID = @champion,
-              IsActive = 0,
-              UpdatedAt = SYSUTCDATETIME()
-          WHERE SeasonID = @seasonId
+          SELECT m.*, s.SeasonName
+          FROM Matches m WITH (UPDLOCK)
+          JOIN Seasons s ON m.SeasonID = s.SeasonID
+          WHERE m.MatchID = @matchId
         `);
+
+      if (matchResult.recordset.length === 0) { await transaction.rollback(); return; }
+      const match = matchResult.recordset[0];
+
+      // Already completed — a concurrent call beat us here; this one is a no-op
+      if (match.Status === 'Completed') { await transaction.rollback(); return; }
+
+      const gamesResult = await transaction.request()
+        .input('matchId', sql.Int, matchId)
+        .query('SELECT * FROM Games WHERE MatchID = @matchId');
+
+      const games = gamesResult.recordset;
+      if (games.length === 0) { await transaction.rollback(); return; }
+
+      const completedGames = games.filter((g: Game) => g.Status === 'Completed');
+      const isAdHoc = match.SeasonName === 'Ad-Hoc Play';
+      const isPlayoff = !!match.IsPlayoff;
+
+      const winCounts: Record<number, number> = {};
+      for (const g of completedGames) {
+        if (g.WinnerTeamSeasonID) {
+          winCounts[g.WinnerTeamSeasonID] = (winCounts[g.WinnerTeamSeasonID] || 0) + 1;
+        }
+      }
+
+      const homeWins = winCounts[match.HomeTeamSeasonID] || 0;
+      const awayWins = winCounts[match.AwayTeamSeasonID] || 0;
+      const majority = 3;
+
+      let shouldComplete = false;
+      if (isAdHoc) {
+        shouldComplete = completedGames.length === games.length && completedGames.length > 0;
+      } else if (isPlayoff) {
+        shouldComplete = homeWins >= majority || awayWins >= majority;
+      } else {
+        shouldComplete = completedGames.length >= 5 && completedGames.length === games.length;
+      }
+
+      if (!shouldComplete) { await transaction.rollback(); return; }
+
+      const matchWinner = homeWins > awayWins ? match.HomeTeamSeasonID : match.AwayTeamSeasonID;
+
+      await transaction.request()
+        .input('matchId', sql.Int, matchId)
+        .input('status', sql.NVarChar(20), 'Completed')
+        .input('winner', sql.Int, matchWinner)
+        .input('homeScore', sql.Int, homeWins)
+        .input('awayScore', sql.Int, awayWins)
+        .query(`
+          UPDATE Matches
+          SET Status = @status, WinnerTeamSeasonID = @winner,
+              HomeScore = @homeScore, AwayScore = @awayScore,
+              UpdatedAt = SYSUTCDATETIME()
+          WHERE MatchID = @matchId
+        `);
+
+      if (!isAdHoc) {
+        await transaction.request()
+          .input('ts', sql.Int, match.HomeTeamSeasonID)
+          .input('gw', sql.Int, homeWins)
+          .query('UPDATE TeamSeasons SET GameWins = GameWins + @gw WHERE TeamSeasonID = @ts');
+
+        await transaction.request()
+          .input('ts', sql.Int, match.AwayTeamSeasonID)
+          .input('gw', sql.Int, awayWins)
+          .query('UPDATE TeamSeasons SET GameWins = GameWins + @gw WHERE TeamSeasonID = @ts');
+      }
+
+      if (match.IsPlayoff && match.PlayoffRound === 'Final') {
+        const loser = matchWinner === match.HomeTeamSeasonID
+          ? match.AwayTeamSeasonID : match.HomeTeamSeasonID;
+
+        await transaction.request()
+          .input('ts', sql.Int, loser)
+          .query('UPDATE TeamSeasons SET IsEliminated = 1 WHERE TeamSeasonID = @ts');
+
+        await transaction.request()
+          .input('seasonId', sql.Int, match.SeasonID)
+          .input('champion', sql.Int, matchWinner)
+          .query(`
+            UPDATE Seasons
+            SET Status = 'Completed',
+                ChampionTeamSeasonID = @champion,
+                IsActive = 0,
+                UpdatedAt = SYSUTCDATETIME()
+            WHERE SeasonID = @seasonId
+          `);
+      }
+
+      await transaction.commit();
+
+      // Post-commit: semi-final check runs outside the transaction — it has its own guards
+      if (match.IsPlayoff && match.PlayoffRound === 'Semi') {
+        await this.checkSemiFinalsCompletion(match.SeasonID);
+      }
+    } catch (err) {
+      await transaction.rollback().catch(() => {});
+      throw err;
     }
   },
 

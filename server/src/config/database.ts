@@ -23,10 +23,18 @@ const dbConfig: sql.config = {
 let pool: sql.ConnectionPool | null = null;
 
 export async function getPool(): Promise<sql.ConnectionPool> {
-  if (!pool) {
-    pool = await new sql.ConnectionPool(dbConfig).connect();
-    logger.info('Connected to MS-SQL Server');
+  if (pool && pool.connected) return pool;
+  // Pool is dead or missing — close cleanly and reconnect
+  if (pool) {
+    await pool.close().catch(() => {});
+    pool = null;
   }
+  pool = await new sql.ConnectionPool(dbConfig).connect();
+  pool.on('error', (err: Error) => {
+    logger.error('SQL pool error — will reconnect on next request', { error: err.message });
+    pool = null;
+  });
+  logger.info('Connected to MS-SQL Server');
   return pool;
 }
 
