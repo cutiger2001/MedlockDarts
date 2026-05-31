@@ -44,10 +44,10 @@ const SEGMENT_MAX_TAPS: Record<string, number> = {
 };
 
 function renderMarks(count: number): React.ReactNode {
-  if (count === 0) return <span style={{ opacity: 0.3 }}>·</span>;
-  if (count === 1) return <span style={{ fontWeight: 700 }}>/</span>;
-  if (count === 2) return <span style={{ fontWeight: 700 }}>X</span>;
-  if (count >= 3) return <span style={{ fontWeight: 700 }}>⊗</span>;
+  if (count === 0) return <span style={{ opacity: 0.3, fontSize: '1.5rem' }}>·</span>;
+  if (count === 1) return <span style={{ fontWeight: 700, fontSize: '1.5rem' }}>/</span>;
+  if (count === 2) return <span style={{ fontWeight: 700, fontSize: '1.5rem' }}>X</span>;
+  if (count >= 3) return <span style={{ fontWeight: 700, fontSize: '1.5rem' }}>⊗</span>;
   return null;
 }
 
