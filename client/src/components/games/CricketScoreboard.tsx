@@ -487,7 +487,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
         }}>
           <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.HomeTeamName}</div>
-          <div style={{ fontSize: 'clamp(3rem, 12vw, 6rem)', fontWeight: 900, lineHeight: 1 }}>
+          <div style={{ fontSize: 'clamp(3.5rem, 14vw, 10rem)', fontWeight: 900, lineHeight: 1 }}>
             {(homeState?.Points || 0) + (currentPlayer?.TeamSeasonID === homeTeamId ? turnPreview.totalPoints : 0)}
           </div>
         </div>
@@ -496,7 +496,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
         }}>
           <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.AwayTeamName}</div>
-          <div style={{ fontSize: 'clamp(3rem, 12vw, 6rem)', fontWeight: 900, lineHeight: 1 }}>
+          <div style={{ fontSize: 'clamp(3.5rem, 14vw, 10rem)', fontWeight: 900, lineHeight: 1 }}>
             {(awayState?.Points || 0) + (currentPlayer?.TeamSeasonID === awayTeamId ? turnPreview.totalPoints : 0)}
           </div>
         </div>

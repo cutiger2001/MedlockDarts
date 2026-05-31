@@ -586,61 +586,62 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
           </div>
         </div>
       ) : (
-        /* Team/1v1 play: two score boxes */
-        <div style={{
-          display: 'grid', gridTemplateColumns: '1fr auto 1fr',
-          gap: 'var(--spacing-md)', marginBottom: 'var(--spacing-lg)',
-          alignItems: 'center',
-        }}>
-        {/* Home team */}
-        <Card style={{
-          textAlign: 'center', backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
-          padding: 'var(--spacing-md) var(--spacing-sm)',
-          outline: 'none',
-          outlineOffset: 2,
-          minHeight: 160,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <div style={{ fontSize: 'clamp(5rem, 20vw, 14rem)', fontWeight: 900, lineHeight: 1 }}>
-            {teamScores[homeTeamId]?.remaining ?? target}
-          </div>
-        </Card>
-
-        {/* Center info */}
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--color-primary)' }}>{target}</div>
-          <div style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>Round {currentRound}</div>
-          {doubleInRequired && (
-            <div style={{
-              fontSize: '0.7rem', fontWeight: 700,
-              marginTop: 4, padding: '2px 6px', borderRadius: 'var(--radius-sm)',
-              backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
-            }}>
-              DOUBLE IN
-            </div>
-          )}
+        /* Team/1v1 play: two score boxes — full 50/50 split for maximum number size */
+        <div>
           <div style={{
-            fontSize: '0.7rem', fontWeight: 700,
-            marginTop: 4, padding: '2px 6px', borderRadius: 'var(--radius-sm)',
-            backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
+            display: 'grid', gridTemplateColumns: '1fr 1fr',
+            gap: 'var(--spacing-xs)', marginBottom: 'var(--spacing-xs)',
           }}>
-            DOUBLE OUT
-          </div>
+          {/* Home team */}
+          <Card style={{
+            textAlign: 'center', backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
+            padding: '8px 4px',
+            minHeight: 130,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            position: 'relative',
+          }}>
+            <div style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 600, marginBottom: 2 }}>{match.HomeTeamName}</div>
+            <div style={{ fontSize: 'clamp(5rem, 22vw, 14rem)', fontWeight: 900, lineHeight: 1 }}>
+              {teamScores[homeTeamId]?.remaining ?? target}
+            </div>
+          </Card>
+
+          {/* Away team */}
+          <Card style={{
+            textAlign: 'center', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
+            padding: '8px 4px',
+            minHeight: 130,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+            position: 'relative',
+          }}>
+            <div style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 600, marginBottom: 2 }}>{match.AwayTeamName}</div>
+            <div style={{ fontSize: 'clamp(5rem, 22vw, 14rem)', fontWeight: 900, lineHeight: 1 }}>
+              {teamScores[awayTeamId]?.remaining ?? target}
+            </div>
+          </Card>
         </div>
 
-        {/* Away team */}
-        <Card style={{
-          textAlign: 'center', backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
-          padding: 'var(--spacing-md) var(--spacing-sm)',
-          outline: 'none',
-          outlineOffset: 2,
-          minHeight: 160,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        {/* Game info strip below scores */}
+        <div style={{
+          display: 'flex', justifyContent: 'center', alignItems: 'center',
+          gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-sm)',
+          flexWrap: 'wrap',
         }}>
-          <div style={{ fontSize: 'clamp(5rem, 20vw, 14rem)', fontWeight: 900, lineHeight: 1 }}>
-            {teamScores[awayTeamId]?.remaining ?? target}
-          </div>
-        </Card>
+          <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-primary)' }}>{target}</span>
+          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-light)' }}>Round {currentRound}</span>
+          {doubleInRequired && (
+            <span style={{
+              fontSize: '0.7rem', fontWeight: 700,
+              padding: '2px 6px', borderRadius: 'var(--radius-sm)',
+              backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
+            }}>DOUBLE IN</span>
+          )}
+          <span style={{
+            fontSize: '0.7rem', fontWeight: 700,
+            padding: '2px 6px', borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
+          }}>DOUBLE OUT</span>
+        </div>
       </div>
       )}
 
