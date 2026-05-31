@@ -69,7 +69,7 @@ function isPossibleCricketMarkState(marks: Record<string, number>): boolean {
 /* ------------------------------------------------------------------ */
 
 function renderMarks(count: number): React.ReactNode {
-  const size = 'clamp(42px, 8vw, 60px)';
+  const size = 'clamp(34px, 5vw, 44px)';
   const svg = {
     width: size, height: size, viewBox: '0 0 40 40',
     style: { display: 'block', margin: '0 auto' } as React.CSSProperties,
