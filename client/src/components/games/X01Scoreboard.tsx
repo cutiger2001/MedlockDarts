@@ -707,9 +707,9 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                 : (nameLen <= 10 ? '3.2rem' : nameLen <= 14 ? '2.8rem' : nameLen <= 18 ? '2.4rem' : '2rem');
               const avgFontSize = hasCheckout ? '1.1rem' : (nameLen <= 10 ? '1.6rem' : nameLen <= 14 ? '1.4rem' : '1.2rem');
               return (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-md)', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-lg)', flexWrap: 'nowrap', overflow: 'hidden' }}>
                   <PlayerAvatar imageData={currentPlayer.ImageData} name={fullName} size={hasCheckout ? 44 : 64} themeColor={currentPlayer.ThemeColor} style={{ flexShrink: 0 }} />
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4em', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75em', flexWrap: 'nowrap', overflow: 'hidden' }}>
                     <span style={{ fontSize: nameFontSize, fontWeight: 900, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
                       {fullName}
                     </span>

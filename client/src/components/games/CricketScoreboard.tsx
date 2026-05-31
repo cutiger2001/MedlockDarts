@@ -556,9 +556,9 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
               backgroundColor: currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)',
               display: 'flex', flexDirection: 'column', justifyContent: 'center',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-sm)', flexWrap: 'nowrap', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-md)', flexWrap: 'nowrap', overflow: 'hidden' }}>
                 <PlayerAvatar imageData={currentPlayer.ImageData} name={fullName} size={42} themeColor={currentPlayer.ThemeColor} style={{ flexShrink: 0 }} />
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.4em', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75em', flexWrap: 'nowrap', overflow: 'hidden' }}>
                   <span style={{ fontSize: nameFontSize, fontWeight: 900, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
                     {fullName}
                   </span>
