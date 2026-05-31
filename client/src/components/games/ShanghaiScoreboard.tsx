@@ -486,9 +486,14 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
         </Card>
       )}
 
-      {/* Complete / Undo / Shanghai */}
+      {/* Complete / Undo / Shanghai — sticky so always visible */}
       {!disabled && (
-        <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)', flexWrap: 'wrap' }}>
+        <div style={{
+          position: 'sticky', bottom: 0, zIndex: 10,
+          backgroundColor: 'var(--color-background)',
+          paddingTop: 'var(--spacing-xs)', paddingBottom: 'var(--spacing-xs)',
+          display: 'flex', gap: 'var(--spacing-sm)', flexWrap: 'wrap',
+        }}>
           {(Object.values(turnMarks).some(v => v > 0) || turns.length > 0) && (
             <Button variant="ghost" onClick={handleUndo} style={{ flex: '0 0 auto' }}>
               ↩️ {Object.values(turnMarks).some(v => v > 0) ? 'Clear' : 'Undo Turn'}
@@ -496,9 +501,12 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
           )}
           <Button
             onClick={completeTurn}
-            style={{ flex: 1, minHeight: 56, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
+            style={{ flex: 1, minHeight: 64, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
           >
             Complete Turn {totalTaps > 0 ? `(${turnPreview.totalMarks} marks)` : '(No Score)'}
+          </Button>
+          <Button variant="secondary" size="lg" onClick={submitShanghaiBonus} style={{ flex: '1 1 100%', minHeight: 56 }}>
+            🀄 SHANGHAI (+200)
           </Button>
         </div>
       )}
@@ -530,13 +538,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
         </Card>
       )}
 
-      {!disabled && (
-        <div style={{ textAlign: 'center', marginBottom: 'var(--spacing-md)' }}>
-          <Button variant="secondary" size="lg" onClick={submitShanghaiBonus}>
-            🀄 SHANGHAI (+200)
-          </Button>
-        </div>
-      )}
+      {/* Shanghai button moved into sticky footer above */}
 
       {/* Throwing Order */}
       <Card title="Throwing Order" style={{ marginBottom: 'var(--spacing-md)' }}>

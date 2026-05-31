@@ -69,30 +69,25 @@ function isPossibleCricketMarkState(marks: Record<string, number>): boolean {
 /* ------------------------------------------------------------------ */
 
 function renderMarks(count: number): React.ReactNode {
-  const size = 'clamp(34px, 5vw, 44px)';
-  const svg = {
-    width: size, height: size, viewBox: '0 0 40 40',
-    style: { display: 'block', margin: '0 auto' } as React.CSSProperties,
-  };
-  const stroke = { stroke: 'currentColor', strokeWidth: 4.5, strokeLinecap: 'round' as const, fill: 'none' };
+  // width/height must be in style (not as SVG attributes) so Safari/WebKit respects the values
+  const svgStyle: React.CSSProperties = { display: 'block', margin: '0 auto', width: '32px', height: '32px' };
+  const svgProps = { viewBox: '0 0 40 40', style: svgStyle };
+  const stroke = { stroke: 'currentColor', strokeWidth: 5, strokeLinecap: 'round' as const, fill: 'none' };
 
   if (count === 0) return <span style={{ opacity: 0.2 }}>·</span>;
   if (count === 1) return (
-    // Slash
-    <svg {...svg}>
+    <svg {...svgProps}>
       <line {...stroke} x1="11" y1="34" x2="29" y2="6" />
     </svg>
   );
   if (count === 2) return (
-    // X
-    <svg {...svg}>
+    <svg {...svgProps}>
       <line {...stroke} x1="10" y1="6" x2="30" y2="34" />
       <line {...stroke} x1="30" y1="6" x2="10" y2="34" />
     </svg>
   );
   if (count >= 3) return (
-    // Circled X
-    <svg {...svg}>
+    <svg {...svgProps}>
       <circle {...stroke} cx="20" cy="20" r="16" />
       <line {...stroke} x1="13" y1="13" x2="27" y2="27" />
       <line {...stroke} x1="27" y1="13" x2="13" y2="27" />
@@ -552,14 +547,14 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
               const liveAwayMarks = !isCurrentTeamHome ? Math.min(am + tapCount, 9) : am;
 
               const hotBtnStyle: React.CSSProperties = {
-                minWidth: 52, minHeight: 68, fontWeight: 800, fontSize: '1.35rem',
+                minWidth: 52, minHeight: 52, fontWeight: 800, fontSize: '1.25rem',
                 borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 userSelect: 'none', WebkitUserSelect: 'none' as any,
               };
               const adjBtnStyle: React.CSSProperties = {
-                width: 44, height: 68, borderRadius: 'var(--radius-sm)',
-                border: 'none', fontWeight: 900, fontSize: '1.4rem',
+                width: 40, height: 52, borderRadius: 'var(--radius-sm)',
+                border: 'none', fontWeight: 900, fontSize: '1.3rem',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               };
@@ -644,9 +639,14 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         </table>
       </Card>
 
-      {/* ===== Complete Turn / Undo Buttons ===== */}
+      {/* ===== Complete Turn / Undo Buttons — sticky so always visible ===== */}
       {!disabled && (
-        <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}>
+        <div style={{
+          position: 'sticky', bottom: 0, zIndex: 10,
+          backgroundColor: 'var(--color-background)',
+          paddingTop: 'var(--spacing-xs)', paddingBottom: 'var(--spacing-xs)',
+          display: 'flex', gap: 'var(--spacing-sm)',
+        }}>
           {(Object.values(turnMarks).some(v => v > 0) || cricketTurns.length > 0) && (
             <Button variant="ghost" onClick={handleUndo} style={{ flex: '0 0 auto' }}>
               ↩️ {Object.values(turnMarks).some(v => v > 0) ? 'Clear' : 'Undo Turn'}
@@ -654,7 +654,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           )}
           <Button
             onClick={completeTurn}
-            style={{ flex: 1, minHeight: 72, fontSize: '1.2rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
+            style={{ flex: 1, minHeight: 64, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
           >
             Complete Turn {totalTaps > 0 ? `(${turnPreview.totalMarks} marks)` : '(No Score)'}
           </Button>
