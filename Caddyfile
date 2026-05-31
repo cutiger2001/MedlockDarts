@@ -1,3 +1,7 @@
+http://darts.dickersons.org {
+	redir https://darts.dickersons.org:5175{uri} 308
+}
+
 darts.dickersons.org:5175 {
 	reverse_proxy localhost:3001
 }
