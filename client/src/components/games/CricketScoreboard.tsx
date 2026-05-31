@@ -556,13 +556,13 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
               backgroundColor: currentPlayer.TeamSeasonID === homeTeamId ? 'var(--color-primary)' : 'var(--color-secondary)',
               display: 'flex', flexDirection: 'column', justifyContent: 'center',
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-md)', flexWrap: 'nowrap', overflow: 'hidden' }}>
-                <PlayerAvatar imageData={currentPlayer.ImageData} name={fullName} size={42} themeColor={currentPlayer.ThemeColor} style={{ flexShrink: 0 }} />
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75em', flexWrap: 'nowrap', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'nowrap', overflow: 'hidden' }}>
+                <PlayerAvatar imageData={currentPlayer.ImageData} name={fullName} size={42} themeColor={currentPlayer.ThemeColor} style={{ flexShrink: 0, marginRight: 16 }} />
+                <div style={{ display: 'flex', alignItems: 'baseline', flexWrap: 'nowrap', overflow: 'hidden' }}>
                   <span style={{ fontSize: nameFontSize, fontWeight: 900, color: '#fff', lineHeight: 1, whiteSpace: 'nowrap' }}>
                     {fullName}
                   </span>
-                  <span style={{ fontSize: mprFontSize, fontWeight: 600, color: 'rgba(255,255,255,0.8)', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: mprFontSize, fontWeight: 600, color: 'rgba(255,255,255,0.8)', whiteSpace: 'nowrap', marginLeft: 14 }}>
                     {getPlayerMPR(currentPlayer.PlayerID).toFixed(2)}
                   </span>
                 </div>
