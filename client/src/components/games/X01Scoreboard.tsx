@@ -598,10 +598,10 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
           padding: 'var(--spacing-md) var(--spacing-sm)',
           outline: 'none',
           outlineOffset: 2,
-          minHeight: 140,
+          minHeight: 160,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <div style={{ fontSize: 'clamp(5rem, 14vw, 9rem)', fontWeight: 900, lineHeight: 1 }}>
+          <div style={{ fontSize: 'clamp(5rem, 20vw, 14rem)', fontWeight: 900, lineHeight: 1 }}>
             {teamScores[homeTeamId]?.remaining ?? target}
           </div>
         </Card>
@@ -634,10 +634,10 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
           padding: 'var(--spacing-md) var(--spacing-sm)',
           outline: 'none',
           outlineOffset: 2,
-          minHeight: 140,
+          minHeight: 160,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <div style={{ fontSize: 'clamp(5rem, 14vw, 9rem)', fontWeight: 900, lineHeight: 1 }}>
+          <div style={{ fontSize: 'clamp(5rem, 20vw, 14rem)', fontWeight: 900, lineHeight: 1 }}>
             {teamScores[awayTeamId]?.remaining ?? target}
           </div>
         </Card>
@@ -788,7 +788,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
               variant={preSelectMultiplier === 2 ? 'primary' : 'ghost'}
               onClick={() => setPreSelectMultiplier(prev => prev === 2 ? null : 2)}
               style={{
-                minWidth: 80, minHeight: 48, fontWeight: 700, fontSize: '1rem',
+                minWidth: 80, minHeight: 64, fontWeight: 700, fontSize: '1.1rem',
                 border: preSelectMultiplier === 2 ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
               }}
             >
@@ -799,7 +799,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
               variant={preSelectMultiplier === 3 ? 'primary' : 'ghost'}
               onClick={() => setPreSelectMultiplier(prev => prev === 3 ? null : 3)}
               style={{
-                minWidth: 80, minHeight: 48, fontWeight: 700, fontSize: '1rem',
+                minWidth: 80, minHeight: 64, fontWeight: 700, fontSize: '1.1rem',
                 border: preSelectMultiplier === 3 ? '2px solid var(--color-primary)' : '1px solid var(--color-border)',
               }}
             >
@@ -823,7 +823,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                   variant="ghost"
                   onClick={() => handleSegmentTap(seg)}
                   style={{
-                    fontSize: '1.1rem', fontWeight: 700, minHeight: 52,
+                    fontSize: '1.2rem', fontWeight: 700, minHeight: 64,
                     border: '1px solid var(--color-border)',
                   }}
                 >
@@ -839,7 +839,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                 variant="ghost"
                 onClick={() => handleSegmentTap('BULL')}
                 style={{
-                  fontSize: '1.1rem', fontWeight: 700, minHeight: 52,
+                  fontSize: '1.2rem', fontWeight: 700, minHeight: 64,
                   border: '1px solid var(--color-border)',
                 }}
               >
@@ -850,7 +850,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                 variant="ghost"
                 onClick={handleMiss}
                 style={{
-                  fontSize: '1.1rem', fontWeight: 700, minHeight: 52,
+                  fontSize: '1.2rem', fontWeight: 700, minHeight: 64,
                   border: '1px solid var(--color-border)',
                   color: 'var(--color-danger)',
                 }}
@@ -868,8 +868,8 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                 style={{
                   width: '100%',
                   marginTop: 'var(--spacing-sm)',
-                  minHeight: 52,
-                  fontSize: '1.1rem',
+                  minHeight: 64,
+                  fontSize: '1.2rem',
                   fontWeight: 700,
                 }}
               >
@@ -890,12 +890,12 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
               const leftScores = settings.fastEntryScores.slice(0, half);
               const rightScores = settings.fastEntryScores.slice(half);
               const sideBtn: React.CSSProperties = {
-                minHeight: 56, fontWeight: 800, fontSize: '1rem',
+                minHeight: 72, fontWeight: 800, fontSize: '1.1rem',
                 border: '1px solid var(--color-border)',
                 padding: '4px 2px', width: '100%',
               };
               return (
-                <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr 72px', gap: 'var(--spacing-xs)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr 80px', gap: 'var(--spacing-xs)' }}>
                   {/* Left column: first half of hot scores */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
                     {leftScores.map(s => (
@@ -907,20 +907,20 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 'var(--spacing-xs)' }}>
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
                       <Button key={n} size="lg" variant="ghost" onClick={() => handleNumpad(String(n))}
-                        style={{ minHeight: 62, fontSize: '1.5rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
+                        style={{ minHeight: 72, fontSize: '1.8rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
                         {n}
                       </Button>
                     ))}
                     <Button size="lg" variant="ghost" onClick={() => handleNumpad('C')}
-                      style={{ minHeight: 62, fontSize: '1rem', fontWeight: 700, border: '1px solid var(--color-border)', color: 'var(--color-danger)' }}>
+                      style={{ minHeight: 72, fontSize: '1.1rem', fontWeight: 700, border: '1px solid var(--color-border)', color: 'var(--color-danger)' }}>
                       CLR
                     </Button>
                     <Button size="lg" variant="ghost" onClick={() => handleNumpad('0')}
-                      style={{ minHeight: 62, fontSize: '1.5rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
+                      style={{ minHeight: 72, fontSize: '1.8rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
                       0
                     </Button>
                     <Button size="lg" variant="ghost" onClick={() => handleNumpad('BS')}
-                      style={{ minHeight: 62, fontSize: '1.1rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
+                      style={{ minHeight: 72, fontSize: '1.3rem', fontWeight: 700, border: '1px solid var(--color-border)' }}>
                       ⌫
                     </Button>
                   </div>
@@ -945,7 +945,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
               onClick={() => submitTurnScore(Number(turnInput) || 0)}
               style={{
                 width: '100%', marginTop: 'var(--spacing-sm)',
-                minHeight: 88,
+                minHeight: 104,
                 background: 'var(--color-success)',
                 color: '#fff',
                 border: 'none',
@@ -957,7 +957,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
                 boxShadow: 'var(--shadow-md)',
               }}
             >
-              <span style={{ fontSize: '3rem', fontWeight: 900, lineHeight: 1 }}>{turnInput || '0'}</span>
+              <span style={{ fontSize: '3.5rem', fontWeight: 900, lineHeight: 1 }}>{turnInput || '0'}</span>
               <span style={{ fontSize: '0.95rem', fontWeight: 600, opacity: 0.9 }}>
                 Submit Turn &nbsp;·&nbsp; Left: {(currentTeamScore?.remaining || target) - (Number(turnInput) || 0)}
               </span>

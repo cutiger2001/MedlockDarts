@@ -69,7 +69,7 @@ function isPossibleCricketMarkState(marks: Record<string, number>): boolean {
 /* ------------------------------------------------------------------ */
 
 function renderMarks(count: number): React.ReactNode {
-  const size = 'clamp(36px, 6.5vw, 52px)';
+  const size = 'clamp(42px, 8vw, 60px)';
   const svg = {
     width: size, height: size, viewBox: '0 0 40 40',
     style: { display: 'block', margin: '0 auto' } as React.CSSProperties,
@@ -492,7 +492,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           backgroundColor: 'var(--color-primary)', color: 'var(--color-text-on-primary)',
         }}>
           <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.HomeTeamName}</div>
-          <div style={{ fontSize: 'clamp(2.8rem, 8vw, 4.5rem)', fontWeight: 900, lineHeight: 1 }}>
+          <div style={{ fontSize: 'clamp(3rem, 12vw, 6rem)', fontWeight: 900, lineHeight: 1 }}>
             {(homeState?.Points || 0) + (currentPlayer?.TeamSeasonID === homeTeamId ? turnPreview.totalPoints : 0)}
           </div>
         </div>
@@ -501,7 +501,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           backgroundColor: 'var(--color-secondary)', color: 'var(--color-text-on-secondary)',
         }}>
           <div style={{ fontSize: '0.8rem', opacity: 0.85, fontWeight: 600, marginBottom: 2 }}>{match.AwayTeamName}</div>
-          <div style={{ fontSize: 'clamp(2.8rem, 8vw, 4.5rem)', fontWeight: 900, lineHeight: 1 }}>
+          <div style={{ fontSize: 'clamp(3rem, 12vw, 6rem)', fontWeight: 900, lineHeight: 1 }}>
             {(awayState?.Points || 0) + (currentPlayer?.TeamSeasonID === awayTeamId ? turnPreview.totalPoints : 0)}
           </div>
         </div>
@@ -511,8 +511,8 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
         {currentPlayer && !disabled && (() => {
           const fullName = `${currentPlayer.FirstName} ${currentPlayer.LastName}`;
           const nameLen = fullName.length;
-          const nameFontSize = nameLen <= 10 ? '2.4rem' : nameLen <= 14 ? '2.1rem' : nameLen <= 18 ? '1.8rem' : '1.5rem';
-          const mprFontSize = nameLen <= 10 ? '1.2rem' : nameLen <= 14 ? '1.05rem' : '0.9rem';
+          const nameFontSize = nameLen <= 10 ? '2.6rem' : nameLen <= 14 ? '2.2rem' : nameLen <= 18 ? '1.9rem' : '1.6rem';
+          const mprFontSize = nameLen <= 10 ? '1.3rem' : nameLen <= 14 ? '1.1rem' : '1rem';
           return (
             <div style={{
               padding: 'var(--spacing-sm) var(--spacing-md)',
@@ -552,14 +552,14 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
               const liveAwayMarks = !isCurrentTeamHome ? Math.min(am + tapCount, 9) : am;
 
               const hotBtnStyle: React.CSSProperties = {
-                minWidth: 48, minHeight: 54, fontWeight: 800, fontSize: '1.25rem',
+                minWidth: 52, minHeight: 68, fontWeight: 800, fontSize: '1.35rem',
                 borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 userSelect: 'none', WebkitUserSelect: 'none' as any,
               };
               const adjBtnStyle: React.CSSProperties = {
-                width: 40, height: 54, borderRadius: 'var(--radius-sm)',
-                border: 'none', fontWeight: 900, fontSize: '1.3rem',
+                width: 44, height: 68, borderRadius: 'var(--radius-sm)',
+                border: 'none', fontWeight: 900, fontSize: '1.4rem',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               };
@@ -600,7 +600,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                       {/* Single tap — number */}
                       <button onClick={() => canTap && handleTap(seg)} style={{
                         ...hotBtnStyle,
-                        minWidth: 60, fontSize: 'clamp(1.4rem, 3.5vw, 1.9rem)',
+                        minWidth: 68, fontSize: 'clamp(1.4rem, 5vw, 2.2rem)',
                         border: `2px solid ${canTap ? 'var(--color-primary)' : 'var(--color-border)'}`,
                         backgroundColor: tapCount > 0 ? 'var(--color-primary)' : 'var(--color-surface)',
                         color: tapCount > 0 ? '#fff' : (canTap ? 'var(--color-primary)' : 'var(--color-text-light)'),
@@ -654,7 +654,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           )}
           <Button
             onClick={completeTurn}
-            style={{ flex: 1, minHeight: 56, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
+            style={{ flex: 1, minHeight: 72, fontSize: '1.2rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
           >
             Complete Turn {totalTaps > 0 ? `(${turnPreview.totalMarks} marks)` : '(No Score)'}
           </Button>

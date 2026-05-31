@@ -27,9 +27,9 @@ export function Button({
   };
 
   const sizeStyles: Record<string, React.CSSProperties> = {
-    sm: { padding: '6px 12px', fontSize: '0.85rem', minHeight: '36px' },
+    sm: { padding: '6px 12px', fontSize: '0.9rem', minHeight: '40px' },
     md: { padding: '10px 20px', fontSize: '1rem', minHeight: 'var(--tap-target)' },
-    lg: { padding: '14px 28px', fontSize: '1.1rem', minHeight: '56px' },
+    lg: { padding: '14px 28px', fontSize: '1.2rem', minHeight: '64px' },
   };
 
   const variantStyles: Record<string, React.CSSProperties> = {

@@ -36,7 +36,7 @@
   --shadow-md: 0 4px 12px rgba(0,0,0,0.15);
   --shadow-lg: 0 8px 24px rgba(0,0,0,0.2);
 
-  --tap-target: 48px;  /* minimum touch target */
+  --tap-target: 56px;  /* minimum touch target (iPad-friendly) */
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
@@ -104,6 +104,15 @@ input:focus, select:focus, textarea:focus {
 .page {
   flex: 1;
   padding: var(--spacing-lg) var(--spacing-md);
+}
+
+/* Game pages: remove excess padding so scoreboards use full screen height */
+.game-fullscreen {
+  padding-top: var(--spacing-sm) !important;
+  padding-bottom: var(--spacing-sm) !important;
+  padding-left: var(--spacing-sm) !important;
+  padding-right: var(--spacing-sm) !important;
+  max-width: 100% !important;
 }
 
 .page-title {
