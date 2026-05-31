@@ -70,7 +70,7 @@ function isPossibleCricketMarkState(marks: Record<string, number>): boolean {
 
 function renderMarks(count: number): React.ReactNode {
   // width/height must be in style (not as SVG attributes) so Safari/WebKit respects the values
-  const svgStyle: React.CSSProperties = { display: 'block', margin: '0 auto', width: '36px', height: '36px' };
+  const svgStyle: React.CSSProperties = { display: 'block', margin: '0 auto', width: '41px', height: '41px' };
   const svgProps = { viewBox: '0 0 40 40', style: svgStyle };
   const stroke = { stroke: 'currentColor', strokeWidth: 5, strokeLinecap: 'round' as const, fill: 'none' };
 
