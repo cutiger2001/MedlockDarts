@@ -15,6 +15,7 @@ interface ScoreboardProps {
   match: Match;
   players: GamePlayer[];
   turns: Turn[];
+  isCorkPending?: boolean;
   onAddTurn: (turn: Partial<Turn>) => Promise<void>;
   onUndoTurn: () => Promise<void>;
   onEndGame: (winnerTeamSeasonId: number) => Promise<void>;
@@ -44,14 +45,14 @@ const SEGMENT_MAX_TAPS: Record<string, number> = {
 };
 
 function renderMarks(count: number): React.ReactNode {
-  if (count === 0) return <span style={{ opacity: 0.3, fontSize: '1.75rem' }}>·</span>;
-  if (count === 1) return <span style={{ fontWeight: 700, fontSize: '1.75rem' }}>/</span>;
-  if (count === 2) return <span style={{ fontWeight: 700, fontSize: '1.75rem' }}>X</span>;
-  if (count >= 3) return <span style={{ fontWeight: 700, fontSize: '1.75rem' }}>⊗</span>;
+  if (count === 0) return <span style={{ opacity: 0.3, fontSize: '1.93rem' }}>·</span>;
+  if (count === 1) return <span style={{ fontWeight: 700, fontSize: '1.93rem' }}>/</span>;
+  if (count === 2) return <span style={{ fontWeight: 700, fontSize: '1.93rem' }}>X</span>;
+  if (count >= 3) return <span style={{ fontWeight: 700, fontSize: '1.93rem' }}>⊗</span>;
   return null;
 }
 
-export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onUndoTurn, onEndGame, onMovePlayer }: ScoreboardProps) {
+export function ShanghaiScoreboard({ game, match, players, turns, isCorkPending = false, onAddTurn, onUndoTurn, onEndGame, onMovePlayer }: ScoreboardProps) {
   const [cricketState, setCricketState] = useState<CricketState[]>([]);
   const [turnMarks, setTurnMarks] = useState<Record<string, number>>({});
   const [extraScores, setExtraScores] = useState<Record<string, number>>({});
@@ -87,7 +88,7 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
   const currentPlayer = turnOrder[currentPlayerIndex];
   const currentRound = turnOrder.length > 0 ? Math.floor(turns.length / turnOrder.length) + 1 : 1;
 
-  const disabled = game.Status === 'Completed';
+  const disabled = game.Status === 'Completed' || isCorkPending;
 
   /* --- Audio: announce "Now Throwing" on player change --- */
   const prevShanghaiTurnCount = useRef(turns.length);
@@ -416,16 +417,16 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
                   opacity: bothClosed ? 0.3 : 1,
                   backgroundColor: bothClosed ? 'var(--color-surface-hover)' : isExtra ? 'rgba(0,0,0,0.02)' : undefined,
                 }}>
-                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '1.3rem' }}>
+                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '1.43rem' }}>
                     {renderMarks(isCurrentTeamHome ? liveHomeMarks : hm)}
                     {isCurrentTeamHome && tapCount > 0 && (
-                      <span style={{ fontSize: '0.7rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
+                      <span style={{ fontSize: '0.77rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
                     )}
                   </td>
                   <td
                     onClick={() => canTap && handleTap(seg)}
                     style={{
-                      padding: '12px 10px', textAlign: 'center', fontWeight: 700, fontSize: '1.1rem',
+                      padding: '13px 11px', textAlign: 'center', fontWeight: 700, fontSize: '1.21rem',
                       color: bothClosed ? 'var(--color-text-light)' : isExtra ? 'var(--color-secondary)' : 'var(--color-primary)',
                       cursor: canTap ? 'pointer' : 'default',
                       userSelect: 'none',
@@ -438,25 +439,25 @@ export function ShanghaiScoreboard({ game, match, players, turns, onAddTurn, onU
                         <button
                           onClick={(e) => { e.stopPropagation(); handleUntap(seg); }}
                           style={{
-                            width: 28, height: 28, border: '1px solid var(--color-danger)',
+                            width: 31, height: 31, border: '1px solid var(--color-danger)',
                             borderRadius: 'var(--radius-sm)', backgroundColor: 'var(--color-danger)',
-                            color: '#fff', fontWeight: 700, fontSize: '0.9rem', cursor: 'pointer',
+                            color: '#fff', fontWeight: 700, fontSize: '0.99rem', cursor: 'pointer',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
                           }}
                         >
                           −
                         </button>
-                        <span style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--color-success)' }}>+{tapCount}</span>
+                        <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-success)' }}>+{tapCount}</span>
                         {isExtra && extraScores[seg] > 0 && (
-                          <span style={{ fontSize: '0.75rem', color: 'var(--color-warning)' }}>({extraScores[seg]}pts)</span>
+                          <span style={{ fontSize: '0.83rem', color: 'var(--color-warning)' }}>({extraScores[seg]}pts)</span>
                         )}
                       </div>
                     )}
                   </td>
-                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '1.3rem' }}>
+                  <td style={{ padding: '10px', textAlign: 'center', fontSize: '1.43rem' }}>
                     {renderMarks(!isCurrentTeamHome ? liveAwayMarks : am)}
                     {!isCurrentTeamHome && tapCount > 0 && (
-                      <span style={{ fontSize: '0.7rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
+                      <span style={{ fontSize: '0.77rem', color: 'var(--color-success)', marginLeft: 4 }}>+{tapCount}</span>
                     )}
                   </td>
                 </tr>

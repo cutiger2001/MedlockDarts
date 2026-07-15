@@ -11,12 +11,13 @@ interface ScoreboardProps {
   match: Match;
   players: GamePlayer[];
   turns: Turn[];
+  isCorkPending?: boolean;
   onAddTurn: (turn: Partial<Turn>) => Promise<void>;
   onUndoTurn: () => Promise<void>;
   onEndGame: (winnerTeamSeasonId: number) => Promise<void>;
 }
 
-export function RoundTheWorldScoreboard({ game, match, players, turns, onAddTurn, onUndoTurn, onEndGame }: ScoreboardProps) {
+export function RoundTheWorldScoreboard({ game, match, players, turns, isCorkPending = false, onAddTurn, onUndoTurn, onEndGame }: ScoreboardProps) {
   const homeTeamId = match.HomeTeamSeasonID;
   const awayTeamId = match.AwayTeamSeasonID;
   const homePlayers = players.filter(p => p.TeamSeasonID === homeTeamId);
@@ -115,7 +116,7 @@ export function RoundTheWorldScoreboard({ game, match, players, turns, onAddTurn
     }
   };
 
-  const disabled = game.Status === 'Completed';
+  const disabled = game.Status === 'Completed' || isCorkPending;
 
   /* --- Audio: announce "Now Throwing" on player change --- */
   const prevRtwTurnCount = useRef(turns.length);

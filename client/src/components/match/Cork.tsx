@@ -15,12 +15,11 @@ interface CorkProps {
 /**
  * Cork UI — determines throw order for odd-numbered games (1, 3, 5).
  * Step 1: "Who won the cork?" — tap a player → their team throws first
- * Step 2: "Who throws second?" — pick from the opposing team
- * Result: CorkWinner → SelectedOpp → Partner → OppPartner
+ * Step 2+: pick next throwers one-by-one, alternating teams.
  */
 export function Cork({ gameNumber, match, players, mode = 'initial', baseOrder, onCorkComplete }: CorkProps) {
-  const [step, setStep] = useState<'cork' | 'second'>('cork');
-  const [corkWinner, setCorkWinner] = useState<GamePlayer | null>(null);
+  const [step, setStep] = useState<'cork' | 'next'>('cork');
+  const [orderedPicks, setOrderedPicks] = useState<GamePlayer[]>([]);
 
   const homePlayers = players.filter(p => p.TeamSeasonID === match.HomeTeamSeasonID);
   const awayPlayers = players.filter(p => p.TeamSeasonID === match.AwayTeamSeasonID);
@@ -43,39 +42,40 @@ export function Cork({ gameNumber, match, players, mode = 'initial', baseOrder, 
       return;
     }
 
-    setCorkWinner(player);
-    // If teams only have one player each, skip step 2
-    const oppTeam = player.TeamSeasonID === match.HomeTeamSeasonID ? awayPlayers : homePlayers;
-    if (oppTeam.length <= 1) {
-      finalize(player, oppTeam[0] || null);
+    const nextOrder = [player];
+    setOrderedPicks(nextOrder);
+    if (nextOrder.length >= players.length) {
+      onCorkComplete(nextOrder);
     } else {
-      setStep('second');
+      setStep('next');
     }
   };
 
-  const handleSecondThrower = (player: GamePlayer) => {
-    if (!corkWinner) return;
-    finalize(corkWinner, player);
+  const handleNextThrower = (player: GamePlayer) => {
+    if (eligiblePlayers.length > 0 && !eligiblePlayers.some(p => p.PlayerID === player.PlayerID)) {
+      return;
+    }
+    const nextOrder = [...orderedPicks, player];
+    setOrderedPicks(nextOrder);
+    if (nextOrder.length >= players.length) {
+      onCorkComplete(nextOrder);
+    }
   };
 
-  const finalize = (winner: GamePlayer, secondThrower: GamePlayer | null) => {
-    // Build throw order: Winner → Second → WinnerPartner → SecondPartner
-    const winnerTeam = winner.TeamSeasonID === match.HomeTeamSeasonID ? homePlayers : awayPlayers;
-    const oppTeam = winner.TeamSeasonID === match.HomeTeamSeasonID ? awayPlayers : homePlayers;
-    const winnerPartner = winnerTeam.find(p => p.PlayerID !== winner.PlayerID);
-    const oppPartner = secondThrower ? oppTeam.find(p => p.PlayerID !== secondThrower.PlayerID) : null;
-
-    const order: GamePlayer[] = [winner];
-    if (secondThrower) order.push(secondThrower);
-    if (winnerPartner) order.push(winnerPartner);
-    if (oppPartner) order.push(oppPartner);
-
-    onCorkComplete(order);
-  };
-
-  const oppTeamPlayers = corkWinner
-    ? (corkWinner.TeamSeasonID === match.HomeTeamSeasonID ? awayPlayers : homePlayers)
-    : [];
+  const remainingPlayers = players.filter(p => !orderedPicks.some(op => op.PlayerID === p.PlayerID));
+  const winnerTeamSeasonID = orderedPicks[0]?.TeamSeasonID;
+  const otherTeamSeasonID = winnerTeamSeasonID === match.HomeTeamSeasonID
+    ? match.AwayTeamSeasonID
+    : match.HomeTeamSeasonID;
+  const expectedTeamSeasonID = orderedPicks.length % 2 === 1 ? otherTeamSeasonID : winnerTeamSeasonID;
+  const teamRestrictedCandidates = remainingPlayers.filter(p => p.TeamSeasonID === expectedTeamSeasonID);
+  const eligiblePlayers = teamRestrictedCandidates.length > 0 ? teamRestrictedCandidates : remainingPlayers;
+  const expectedTeamName = expectedTeamSeasonID === match.HomeTeamSeasonID
+    ? match.HomeTeamName
+    : match.AwayTeamName;
+  const nextPickNumber = orderedPicks.length + 1;
+  const ordinals = ['first', 'second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth'];
+  const currentOrdinal = ordinals[nextPickNumber - 1] || `#${nextPickNumber}`;
   const patternPlayers = canUsePatternMode && baseOrder
     ? (mode === 'g3' ? [baseOrder[2], baseOrder[3]] : [baseOrder[0], baseOrder[1]])
     : [];
@@ -124,20 +124,39 @@ export function Cork({ gameNumber, match, players, mode = 'initial', baseOrder, 
         </>
       )}
 
-      {!canUsePatternMode && step === 'second' && corkWinner && (
+      {!canUsePatternMode && step === 'next' && (
         <>
           <p style={{ color: 'var(--color-text-light)', marginBottom: 'var(--spacing-sm)' }}>
-            <strong>{corkWinner.FirstName} {corkWinner.LastName}</strong> won the cork!
+            <strong>{orderedPicks[0]?.FirstName} {orderedPicks[0]?.LastName}</strong> won the cork.
           </p>
           <p style={{ color: 'var(--color-text-light)', marginBottom: 'var(--spacing-md)' }}>
-            Who throws second from {corkWinner.TeamSeasonID === match.HomeTeamSeasonID ? match.AwayTeamName : match.HomeTeamName}?
+            Who throws {currentOrdinal}?
           </p>
+          <p style={{ color: 'var(--color-text-light)', fontSize: '0.85rem', marginBottom: 'var(--spacing-sm)' }}>
+            Pick from: <strong>{expectedTeamName}</strong>
+          </p>
+          {orderedPicks.length > 0 && (
+            <p style={{ color: 'var(--color-text-light)', fontSize: '0.85rem', marginBottom: 'var(--spacing-md)' }}>
+              Order so far: {orderedPicks.map(p => `${p.FirstName} ${p.LastName}`).join(' → ')}
+            </p>
+          )}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--spacing-md)', justifyContent: 'center' }}>
-            {oppTeamPlayers.map(p => playerButton(p, () => handleSecondThrower(p)))}
+            {eligiblePlayers.map(p => playerButton(p, () => handleNextThrower(p)))}
           </div>
           <div style={{ marginTop: 'var(--spacing-md)' }}>
-            <Button variant="ghost" size="sm" onClick={() => { setCorkWinner(null); setStep('cork'); }}>
-              ← Redo Cork
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                if (orderedPicks.length <= 1) {
+                  setOrderedPicks([]);
+                  setStep('cork');
+                  return;
+                }
+                setOrderedPicks(prev => prev.slice(0, -1));
+              }}
+            >
+              {orderedPicks.length <= 1 ? '← Redo Cork' : '↩ Undo Last Pick'}
             </Button>
           </div>
         </>

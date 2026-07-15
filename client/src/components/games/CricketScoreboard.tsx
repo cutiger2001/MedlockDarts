@@ -3,6 +3,7 @@ import type { Game, Match, GamePlayer, CricketTurn, CricketState } from '../../t
 import { gameService } from '../../services/gameService';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
+import { Modal } from '../common/Modal';
 import { PlayerAvatar } from '../common/PlayerAvatar';
 import {
   announceNowThrowing, announceMarks, announceAllStar,
@@ -18,9 +19,11 @@ interface CricketScoreboardProps {
   match: Match;
   players: GamePlayer[];
   cricketTurns: CricketTurn[];
+  isCorkPending?: boolean;
   onAddCricketTurn: (turn: Partial<CricketTurn>) => Promise<void>;
   onUndoCricketTurn: () => Promise<void>;
   onEndGame: (winnerTeamSeasonId: number) => Promise<void>;
+  onMovePlayer: (playerId: number, direction: -1 | 1) => void | Promise<void>;
 }
 
 type AllStarLevel = 'allstar' | 'double' | 'triple' | null;
@@ -70,7 +73,8 @@ function isPossibleCricketMarkState(marks: Record<string, number>): boolean {
 
 function renderMarks(count: number): React.ReactNode {
   // width/height must be in style (not as SVG attributes) so Safari/WebKit respects the values
-  const svgStyle: React.CSSProperties = { display: 'block', margin: '0 auto', width: '41px', height: '41px' };
+  // Increased size by ~20% total (45→50→55px) and keep SVG centered inside a fixed container
+  const svgStyle: React.CSSProperties = { display: 'block', margin: '0 auto', width: '55px', height: '55px' };
   const svgProps = { viewBox: '0 0 40 40', style: svgStyle };
   const stroke = { stroke: 'currentColor', strokeWidth: 5, strokeLinecap: 'round' as const, fill: 'none' };
 
@@ -115,6 +119,13 @@ function getCricketAllStarLevel(turnMarks: Record<string, number>): AllStarLevel
   return null;
 }
 
+function getAllStarCount(level: AllStarLevel): number {
+  if (level === 'triple') return 3;
+  if (level === 'double') return 2;
+  if (level === 'allstar') return 1;
+  return 0;
+}
+
 const ALL_STAR_LABELS: Record<string, string> = {
   allstar: '⭐ ALL STAR! ⭐',
   double: '⭐⭐ DOUBLE ALL STAR! ⭐⭐',
@@ -131,12 +142,14 @@ const ALL_STAR_COLORS: Record<string, string> = {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function CricketScoreboard({ game, match, players, cricketTurns, onAddCricketTurn, onUndoCricketTurn, onEndGame }: CricketScoreboardProps) {
+export function CricketScoreboard({ game, match, players, cricketTurns, isCorkPending = false, onAddCricketTurn, onUndoCricketTurn, onEndGame, onMovePlayer }: CricketScoreboardProps) {
   const [cricketState, setCricketState] = useState<CricketState[]>([]);
   // Tap-based: marks per segment for current turn
   const [turnMarks, setTurnMarks] = useState<Record<string, number>>({});
   const [allStarAnim, setAllStarAnim] = useState<{ level: AllStarLevel; playerName: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showPlayOrder, setShowPlayOrder] = useState(false);
+  const [showOrderModal, setShowOrderModal] = useState(false);
   const [malortAnim, setMalortAnim] = useState<{ playerName: string } | null>(null);
 
   const handleMalort = () => {
@@ -174,7 +187,8 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
   const currentPlayer = turnOrder[currentPlayerIndex];
   const currentRound = turnOrder.length > 0 ? Math.floor(cricketTurns.length / turnOrder.length) + 1 : 1;
 
-  const disabled = game.Status === 'Completed';
+  const disabled = game.Status === 'Completed' || isCorkPending;
+  const canAdjustOrder = !disabled && cricketTurns.length === 0;
 
   /* --- Audio: announce "Now Throwing" on player change --- */
   const prevCricketTurnCount = useRef(cricketTurns.length);
@@ -419,7 +433,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
       MarksScored: totalMarks,
       IsCricketClose: isClose,
       ...segColumns,
-      Details: JSON.stringify({ taps: turnMarks, allStarLevel: level, allStarCount: level ? 1 : 0, close: isClose }),
+      Details: JSON.stringify({ taps: turnMarks, allStarLevel: level, allStarCount: getAllStarCount(level), close: isClose }),
     } as Partial<CricketTurn>);
 
     setTurnMarks({});
@@ -588,14 +602,14 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
               const liveAwayMarks = !isCurrentTeamHome ? Math.min(am + tapCount, 9) : am;
 
               const hotBtnStyle: React.CSSProperties = {
-                minWidth: 52, minHeight: 52, fontWeight: 800, fontSize: '1.25rem',
+                minWidth: 57, minHeight: 57, fontWeight: 800, fontSize: '1.38rem',
                 borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-border)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                 userSelect: 'none', WebkitUserSelect: 'none' as any,
               };
               const adjBtnStyle: React.CSSProperties = {
-                width: 40, height: 52, borderRadius: 'var(--radius-sm)',
-                border: 'none', fontWeight: 900, fontSize: '1.3rem',
+                width: 44, height: 57, borderRadius: 'var(--radius-sm)',
+                border: 'none', fontWeight: 900, fontSize: '1.43rem',
                 cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
                 flexShrink: 0,
               };
@@ -605,10 +619,13 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                   borderBottom: '1px solid var(--color-border)',
                   opacity: bothClosed ? 0.3 : 1,
                   backgroundColor: bothClosed ? 'var(--color-surface-hover)' : undefined,
+                  minHeight: 100,
                 }}>
                   {/* Home marks */}
                   <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle', width: '25%' }}>
-                    {renderMarks(isCurrentTeamHome ? liveHomeMarks : hm)}
+                    <div style={{ width: 60, height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>
+                      {renderMarks(isCurrentTeamHome ? liveHomeMarks : hm)}
+                    </div>
                   </td>
 
                   {/* Center: − | D | # | T | ✕ */}
@@ -636,7 +653,7 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
                       {/* Single tap — number */}
                       <button onClick={() => canTap && handleTap(seg)} style={{
                         ...hotBtnStyle,
-                        minWidth: 68, fontSize: 'clamp(1.4rem, 5vw, 2.2rem)',
+                        minWidth: 75, height: 57, overflow: 'hidden', fontSize: 'clamp(1.54rem, 5vw, 2.42rem)',
                         border: `2px solid ${canTap ? 'var(--color-primary)' : 'var(--color-border)'}`,
                         backgroundColor: tapCount > 0 ? 'var(--color-primary)' : 'var(--color-surface)',
                         color: tapCount > 0 ? '#fff' : (canTap ? 'var(--color-primary)' : 'var(--color-text-light)'),
@@ -671,7 +688,9 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
 
                   {/* Away marks */}
                   <td style={{ padding: '6px 4px', textAlign: 'center', verticalAlign: 'middle', width: '25%' }}>
-                    {renderMarks(!isCurrentTeamHome ? liveAwayMarks : am)}
+                    <div style={{ width: 60, height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>
+                      {renderMarks(!isCurrentTeamHome ? liveAwayMarks : am)}
+                    </div>
                   </td>
                 </tr>
               );
@@ -706,6 +725,15 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
             style={{ flex: 1, minHeight: 64, fontSize: '1.1rem', fontWeight: 700, backgroundColor: 'var(--color-success)', color: '#fff' }}
           >
             Complete Turn {totalTaps > 0 ? `(${turnPreview.totalMarks} marks)` : '(No Score)'}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => setShowOrderModal(true)}
+            disabled={!canAdjustOrder}
+            title={canAdjustOrder ? 'Adjust play order' : 'Play order can only be adjusted before any score is entered'}
+            style={{ flex: '0 0 auto' }}
+          >
+            Adjust Play Order
           </Button>
         </div>
       )}
@@ -765,6 +793,86 @@ export function CricketScoreboard({ game, match, players, cricketTurns, onAddCri
           )}
         </div>
       )}
+
+      <div style={{ marginTop: 'var(--spacing-xs)' }}>
+        <button
+          onClick={() => setShowPlayOrder(v => !v)}
+          style={{
+            width: '100%', padding: '6px', background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+            color: 'var(--color-text-light)', fontSize: '0.8rem', cursor: 'pointer',
+          }}
+        >
+          {showPlayOrder ? '▲ Hide Play Order' : `▼ Play Order (${players.length} players)`}
+        </button>
+        {showPlayOrder && (
+          <Card title="Play Order" style={{ marginTop: 'var(--spacing-sm)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {players.map((player, index) => (
+                <div
+                  key={player.PlayerID}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 8px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.9rem' }}>{index + 1}. {player.FirstName} {player.LastName}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)' }}>
+                    {player.TeamSeasonID === homeTeamId ? match.HomeTeamName : match.AwayTeamName}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+
+      <Modal
+        isOpen={showOrderModal}
+        onClose={() => setShowOrderModal(false)}
+        title="Adjust Play Order"
+        footer={(
+          <Button onClick={() => setShowOrderModal(false)}>Done</Button>
+        )}
+      >
+        {!canAdjustOrder ? (
+          <p style={{ color: 'var(--color-text-light)' }}>
+            Play order can only be adjusted before any score is entered.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {players.map((player, index) => (
+              <div
+                key={player.PlayerID}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--spacing-sm)',
+                  padding: '8px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700 }}>{index + 1}. {player.FirstName} {player.LastName}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-light)' }}>
+                    {player.TeamSeasonID === homeTeamId ? match.HomeTeamName : match.AwayTeamName}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <Button size="sm" variant="ghost" onClick={() => onMovePlayer(player.PlayerID, -1)} disabled={index === 0}>↑</Button>
+                  <Button size="sm" variant="ghost" onClick={() => onMovePlayer(player.PlayerID, 1)} disabled={index === players.length - 1}>↓</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       {/* All-Star + Malört animation keyframes */}
       <style>{`

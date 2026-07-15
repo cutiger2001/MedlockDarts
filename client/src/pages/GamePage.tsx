@@ -87,7 +87,13 @@ export function GamePage() {
           try {
             const ids: number[] = JSON.parse(stored);
             const ordered = ids.map(id => p.find(pl => pl.PlayerID === id)).filter(Boolean) as GamePlayer[];
-            if (ordered.length === p.length) { setOrderedPlayers(ordered); setCorkDone(true); }
+            if (ordered.length === p.length) {
+              setOrderedPlayers(ordered);
+              setCorkDone(true);
+            } else {
+              // Discard stale/partial local order so cork can be completed cleanly.
+              localStorage.removeItem(CORK_KEY(g.GameID));
+            }
           } catch { /* ignore parse errors */ }
         }
         if (m) {
@@ -218,10 +224,10 @@ export function GamePage() {
   const goToNextGame = async () => {
     if (!game || !match) return;
     const nextNum = allGames.length + 1;
-    // Playoff: match ends when a team clinches 3 wins; regular: 5 games max
+    // Playoff: match ends when a team clinches 3 wins; regular season always plays all 5 games
     const homeWinsNow = allGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.HomeTeamSeasonID).length;
     const awayWinsNow = allGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.AwayTeamSeasonID).length;
-    const matchClinched = homeWinsNow >= 3 || awayWinsNow >= 3;
+    const matchClinched = !!match.IsPlayoff && (homeWinsNow >= 3 || awayWinsNow >= 3);
     if (nextNum > MATCH_GAME_COUNT || matchClinched) { navigate(`/match/${game.MatchID}`); return; }
     const fmt = gameFormats.find(f => f.GameNumber === nextNum);
     if (!fmt) { navigate(`/match/${game.MatchID}`); return; }
@@ -237,12 +243,36 @@ export function GamePage() {
     } catch (err: any) { setError(err.message); }
   };
 
-  /** Cork completion — persist order in localStorage */
-  const handleCorkComplete = (ordered: GamePlayer[]) => {
+  /** Cork completion — require full order, persist locally and server-side */
+  const handleCorkComplete = async (ordered: GamePlayer[]) => {
     if (!game || !match) return;
+
+    const uniqueCount = new Set(ordered.map(player => player.PlayerID)).size;
+    if (ordered.length !== players.length || uniqueCount !== players.length) {
+      setError('Cork order is incomplete. Please select cork winner and second thrower again.');
+      setCorkDone(false);
+      setOrderedPlayers(null);
+      localStorage.removeItem(CORK_KEY(game.GameID));
+      return;
+    }
+
+    setError('');
     setOrderedPlayers(ordered);
     setCorkDone(true);
     localStorage.setItem(CORK_KEY(game.GameID), JSON.stringify(ordered.map(p => p.PlayerID)));
+
+    try {
+      // Keep persisted player order in sync with completed cork order.
+      const updated = await gameService.reorderPlayers(game.GameID, ordered.map(player => player.PlayerID));
+      setPlayers(updated);
+    } catch (err: any) {
+      setError(err.message || 'Failed to save cork order. Please try corking again.');
+      setCorkDone(false);
+      setOrderedPlayers(null);
+      localStorage.removeItem(CORK_KEY(game.GameID));
+      return;
+    }
+
     if (game.GameNumber === 1 && ordered.length === 4) {
       setBaseMatchOrder(ordered);
       localStorage.setItem(MATCH_BASE_ORDER_KEY(match.MatchID), JSON.stringify(ordered.map(p => p.PlayerID)));
@@ -609,7 +639,7 @@ export function GamePage() {
         // Determine if match is clinched (for button logic)
         const hwNow = allGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.HomeTeamSeasonID).length;
         const awNow = allGames.filter(g => g.Status === 'Completed' && g.WinnerTeamSeasonID === match.AwayTeamSeasonID).length;
-        const clinched = hwNow >= 3 || awNow >= 3;
+        const clinched = !!match.IsPlayoff && (hwNow >= 3 || awNow >= 3);
         const isChampionMoment = clinched && match.IsPlayoff && match.PlayoffRound === 'Final';
         const matchWinnerName = hwNow >= awNow ? match.HomeTeamName : match.AwayTeamName;
 
@@ -925,22 +955,43 @@ export function GamePage() {
       )}
 
       {game.GameType === 'X01' && (
-        <X01Scoreboard {...baseProps} turns={turns} onAddTurn={addTurn} onUndoTurn={undoTurn} />
+        <X01Scoreboard
+          {...baseProps}
+          turns={turns}
+          isCorkPending={needsCork}
+          onAddTurn={addTurn}
+          onUndoTurn={undoTurn}
+          onMovePlayer={movePlayerOrder}
+        />
       )}
       {game.GameType === 'Cricket' && (
-        <CricketScoreboard {...baseProps} cricketTurns={cricketTurns} onAddCricketTurn={addCricketTurn} onUndoCricketTurn={undoCricketTurn} />
+        <CricketScoreboard
+          {...baseProps}
+          cricketTurns={cricketTurns}
+          isCorkPending={needsCork}
+          onAddCricketTurn={addCricketTurn}
+          onUndoCricketTurn={undoCricketTurn}
+          onMovePlayer={movePlayerOrder}
+        />
       )}
       {game.GameType === 'Shanghai' && (
         <ShanghaiScoreboard
           {...baseProps}
           turns={turns}
+          isCorkPending={needsCork}
           onAddTurn={addTurn}
           onUndoTurn={undoTurn}
           onMovePlayer={movePlayerOrder}
         />
       )}
       {game.GameType === 'RoundTheWorld' && (
-        <RoundTheWorldScoreboard {...baseProps} turns={turns} onAddTurn={addTurn} onUndoTurn={undoTurn} />
+        <RoundTheWorldScoreboard
+          {...baseProps}
+          turns={turns}
+          isCorkPending={needsCork}
+          onAddTurn={addTurn}
+          onUndoTurn={undoTurn}
+        />
       )}
       {game.GameType === 'Killer' && (
         <KillerScoreboard {...baseProps} turns={turns} onAddTurn={addTurn} onUndoTurn={undoTurn} />

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import type { Game, Match, GamePlayer, Turn } from '../../types';
 import { Card } from '../common/Card';
 import { Button } from '../common/Button';
+import { Modal } from '../common/Modal';
 import { PlayerAvatar } from '../common/PlayerAvatar';
 import { useSettings } from '../../contexts/SettingsContext';
 import { getCheckout } from '../../data/checkoutChart';
@@ -25,9 +26,11 @@ interface ScoreboardProps {
   match: Match;
   players: GamePlayer[];
   turns: Turn[];
+  isCorkPending?: boolean;
   onAddTurn: (turn: Partial<Turn>) => Promise<void>;
   onUndoTurn: () => Promise<void>;
   onEndGame: (winnerTeamSeasonId: number) => Promise<void>;
+  onMovePlayer: (playerId: number, direction: -1 | 1) => void | Promise<void>;
 }
 
 type AllStarLevel = 'allstar' | 'double' | 'triple' | null;
@@ -114,13 +117,27 @@ function getEffectiveTurnScore(darts: Dart[], needDoubleIn: boolean, alreadyDoub
 /* ------------------------------------------------------------------ */
 
 function getX01AllStarLevel(score: number, isDoubleIn: boolean, isGameOut: boolean): AllStarLevel {
-  // ×2 multiplier if double-in or double-out turn
-  const multiplier = (isDoubleIn || isGameOut) ? 2 : 1;
-  const adjusted = score * multiplier;
-  if (adjusted >= 171) return 'triple';
-  if (adjusted >= 126) return 'double';
-  if (adjusted >= 95) return 'allstar';
+  // Base all-star thresholds (must meet minimum to qualify)
+  let allStarCount = 0;
+  if (score >= 171) allStarCount = 3;
+  else if (score >= 126) allStarCount = 2;
+  else if (score >= 95) allStarCount = 1;
+
+  // Bonus: +1 if this turn qualifies as an all-star AND is a double-in or double-out
+  if (allStarCount > 0 && (isDoubleIn || isGameOut)) allStarCount += 1;
+
+  // Convert count to level (cap at 3)
+  if (allStarCount >= 3) return 'triple';
+  if (allStarCount === 2) return 'double';
+  if (allStarCount === 1) return 'allstar';
   return null;
+}
+
+function getAllStarCount(level: AllStarLevel): number {
+  if (level === 'triple') return 3;
+  if (level === 'double') return 2;
+  if (level === 'allstar') return 1;
+  return 0;
 }
 
 const ALL_STAR_LABELS: Record<string, string> = {
@@ -139,7 +156,7 @@ const ALL_STAR_COLORS: Record<string, string> = {
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTurn, onEndGame }: ScoreboardProps) {
+export function X01Scoreboard({ game, match, players, turns, isCorkPending = false, onAddTurn, onUndoTurn, onEndGame, onMovePlayer }: ScoreboardProps) {
   const { settings } = useSettings();
   const defaultMode = settings.x01ScoringMode;
 
@@ -164,6 +181,8 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
   // Malört penalty animation
   const [malortAnim, setMalortAnim] = useState<{ playerName: string } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showPlayOrder, setShowPlayOrder] = useState(false);
+  const [showOrderModal, setShowOrderModal] = useState(false);
 
   const handleMalort = () => {
     const name = currentPlayer ? `${currentPlayer.FirstName} ${currentPlayer.LastName}` : 'Current Player';
@@ -313,7 +332,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       RemainingScore: remaining,
       IsDoubleIn: isDoubleIn,
       IsGameOut: isGameOut,
-      Details: JSON.stringify({ darts, bust: isBust, allStarLevel, allStarCount: allStarLevel ? 1 : 0 }),
+      Details: JSON.stringify({ darts, bust: isBust, allStarLevel, allStarCount: getAllStarCount(allStarLevel) }),
     });
 
     setCurrentDarts([]);
@@ -392,7 +411,7 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
       RemainingScore: effectiveRemaining,
       IsDoubleIn: isDoubleIn,
       IsGameOut: isGameOut,
-      Details: JSON.stringify({ allStarLevel, allStarCount: allStarLevel ? 1 : 0, bust: isBust, attemptedScore: score }),
+      Details: JSON.stringify({ allStarLevel, allStarCount: getAllStarCount(allStarLevel), bust: isBust, attemptedScore: score }),
     });
 
     setTurnInput('');
@@ -507,7 +526,8 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
     }
   };
 
-  const disabled = game.Status === 'Completed';
+  const disabled = game.Status === 'Completed' || isCorkPending;
+  const canAdjustOrder = !disabled && turns.length === 0;
 
   /* --- Audio: announce "Now Throwing" on player change --- */
   const prevTurnCount = useRef(turns.length);
@@ -1091,6 +1111,15 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
               ⚡ Single dart out!
             </span>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setShowOrderModal(true)}
+            disabled={!canAdjustOrder}
+            title={canAdjustOrder ? 'Adjust play order' : 'Play order can only be adjusted before any score is entered'}
+          >
+            Adjust Play Order
+          </Button>
         </div>
       )}
 
@@ -1159,6 +1188,86 @@ export function X01Scoreboard({ game, match, players, turns, onAddTurn, onUndoTu
           )}
         </div>
       )}
+
+      <div style={{ marginTop: 'var(--spacing-xs)' }}>
+        <button
+          onClick={() => setShowPlayOrder(v => !v)}
+          style={{
+            width: '100%', padding: '6px', background: 'var(--color-surface)',
+            border: '1px solid var(--color-border)', borderRadius: 'var(--radius-sm)',
+            color: 'var(--color-text-light)', fontSize: '0.8rem', cursor: 'pointer',
+          }}
+        >
+          {showPlayOrder ? '▲ Hide Play Order' : `▼ Play Order (${players.length} players)`}
+        </button>
+        {showPlayOrder && (
+          <Card title="Play Order" style={{ marginTop: 'var(--spacing-sm)' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              {players.map((player, index) => (
+                <div
+                  key={player.PlayerID}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '6px 8px',
+                    border: '1px solid var(--color-border)',
+                    borderRadius: 'var(--radius-sm)',
+                  }}
+                >
+                  <span style={{ fontSize: '0.9rem' }}>{index + 1}. {player.FirstName} {player.LastName}</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--color-text-light)' }}>
+                    {player.TeamSeasonID === homeTeamId ? match.HomeTeamName : match.AwayTeamName}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+      </div>
+
+      <Modal
+        isOpen={showOrderModal}
+        onClose={() => setShowOrderModal(false)}
+        title="Adjust Play Order"
+        footer={(
+          <Button onClick={() => setShowOrderModal(false)}>Done</Button>
+        )}
+      >
+        {!canAdjustOrder ? (
+          <p style={{ color: 'var(--color-text-light)' }}>
+            Play order can only be adjusted before any score is entered.
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {players.map((player, index) => (
+              <div
+                key={player.PlayerID}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 'var(--spacing-sm)',
+                  padding: '8px',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 700 }}>{index + 1}. {player.FirstName} {player.LastName}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-light)' }}>
+                    {player.TeamSeasonID === homeTeamId ? match.HomeTeamName : match.AwayTeamName}
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 4 }}>
+                  <Button size="sm" variant="ghost" onClick={() => onMovePlayer(player.PlayerID, -1)} disabled={index === 0}>↑</Button>
+                  <Button size="sm" variant="ghost" onClick={() => onMovePlayer(player.PlayerID, 1)} disabled={index === players.length - 1}>↓</Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
 
       {/* All-Star + Malört animation keyframes */}
       <style>{`
